@@ -114,7 +114,7 @@ func loadTest(cCtx *cli.Context) error {
 			URL:            pc.URL,
 			APIKey:         pc.APIKey,
 			APISecret:      pc.APISecret,
-			Room:           cCtx.String("room"),
+			Room:           "load-test",
 			IdentityPrefix: cCtx.String("identity-prefix"),
 			Layout:         loadtester.LayoutFromString(cCtx.String("layout")),
 		},

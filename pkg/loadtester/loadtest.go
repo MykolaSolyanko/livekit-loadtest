@@ -3,7 +3,6 @@ package loadtester
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"sort"
 	"strings"
@@ -200,9 +199,7 @@ func (t *LoadTest) RunSuite(ctx context.Context) error {
 }
 
 func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerStats, error) {
-	if params.Room == "" {
-		params.Room = fmt.Sprintf("testroom%d", rand.Int31n(1000))
-	}
+	// params.Room = fmt.Sprintf("testroom%d", rand.Int31n(1000))
 	params.IdentityPrefix = randStringRunes(5)
 
 	expectedTracks := params.VideoPublishers + params.AudioPublishers
@@ -215,10 +212,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		participantStrings = append(participantStrings, fmt.Sprintf("%d audio publishers", params.AudioPublishers))
 	}
 	if params.Subscribers > 0 {
-		participantStrings = append(participantStrings, fmt.Sprintf("%d subscribers", params.Subscribers))
+		participantStrings = append(participantStrings, fmt.Sprintf("%d subscribers", params.Subscribers*expectedTracks))
 	}
-	fmt.Printf("Starting load test with %s, room: %s\n",
-		strings.Join(participantStrings, ", "), params.Room)
+
+	fmt.Printf("Starting load test with %s\n", strings.Join(participantStrings, ", "))
 
 	var publishers, testers []*LoadTester
 	group, _ := errgroup.WithContext(ctx)
@@ -226,30 +223,20 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 	numStarted := float64(0)
 	errs := syncmap.Map{}
 	maxPublishers := params.VideoPublishers
-	if params.AudioPublishers > maxPublishers {
-		maxPublishers = params.AudioPublishers
-	}
-	for i := 0; i < maxPublishers+params.Subscribers; i++ {
+
+	for i := 0; i < maxPublishers; i++ {
+		room := fmt.Sprintf("%s_%d", params.Room, i)
 		testerParams := params.TesterParams
 		testerParams.Sequence = i
-		testerParams.expectedTracks = expectedTracks
-		isVideoPublisher := i < params.VideoPublishers
-		isAudioPublisher := i < params.AudioPublishers
-		if isVideoPublisher || isAudioPublisher {
-			// publishers would not get their own tracks
-			testerParams.expectedTracks = 0
-			testerParams.IdentityPrefix += "_pub"
-			testerParams.name = fmt.Sprintf("Pub %d", i)
-		} else {
-			testerParams.Subscribe = true
-			testerParams.name = fmt.Sprintf("Sub %d", i-params.VideoPublishers)
-		}
-
+		// publishers would not get their own tracks
+		testerParams.expectedTracks = 0
+		testerParams.IdentityPrefix += fmt.Sprintf("_pub_%s", room)
+		testerParams.name = fmt.Sprintf("Pub %d", i)
+		testerParams.Room = room
 		tester := NewLoadTester(testerParams)
 		testers = append(testers, tester)
-		if isVideoPublisher || isAudioPublisher {
-			publishers = append(publishers, tester)
-		}
+
+		publishers = append(publishers, tester)
 
 		group.Go(func() error {
 			if err := tester.Start(); err != nil {
@@ -258,48 +245,61 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 				return nil
 			}
 
-			if isAudioPublisher {
-				audio, err := tester.PublishAudioTrack("audio")
-				if err != nil {
-					errs.Store(testerParams.name, err)
-					return nil
-				}
-				t.lock.Lock()
-				t.trackNames[audio] = fmt.Sprintf("%dA", testerParams.Sequence)
-				t.lock.Unlock()
+			var video string
+			var err error
+			if params.Simulcast {
+				video, err = tester.PublishSimulcastTrack("video-simulcast", params.VideoResolution, params.VideoCodec)
+			} else {
+				video, err = tester.PublishVideoTrack("video", params.VideoResolution, params.VideoCodec)
 			}
-			if isVideoPublisher {
-				var video string
-				var err error
-				if params.Simulcast {
-					video, err = tester.PublishSimulcastTrack("video-simulcast", params.VideoResolution, params.VideoCodec)
-				} else {
-					video, err = tester.PublishVideoTrack("video", params.VideoResolution, params.VideoCodec)
-				}
-				if err != nil {
-					errs.Store(testerParams.name, err)
-					return nil
-				}
-				t.lock.Lock()
-				t.trackNames[video] = fmt.Sprintf("%dV", testerParams.Sequence)
-				t.lock.Unlock()
+			if err != nil {
+				errs.Store(testerParams.name, err)
+				return nil
 			}
+			t.lock.Lock()
+			t.trackNames[video] = fmt.Sprintf("%dV", testerParams.Sequence)
+			t.lock.Unlock()
+
 			return nil
 		})
 		numStarted++
 
-		// throttle pace of join events
-		for {
-			secondsElapsed := float64(time.Since(startedAt)) / float64(time.Second)
-			startRate := numStarted / secondsElapsed
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if startRate > params.NumPerSecond {
-				time.Sleep(time.Second)
-			} else {
-				break
-			}
+		for j := 0; j < params.Subscribers; j++ {
+			testerParams := params.TesterParams
+			testerParams.Sequence = j
+			testerParams.expectedTracks = expectedTracks
+			testerParams.Subscribe = true
+			testerParams.IdentityPrefix += fmt.Sprintf("_sub_%s", room)
+			testerParams.Room = room
+			testerParams.name = fmt.Sprintf("Sub %d in %s", j, room)
+
+			tester := NewLoadTester(testerParams)
+			testers = append(testers, tester)
+
+			group.Go(func() error {
+				if err := tester.Start(); err != nil {
+					fmt.Println(errors.Wrapf(err, "could not connect %s", testerParams.name))
+					errs.Store(testerParams.name, err)
+					return nil
+				}
+
+				return nil
+			})
+			numStarted++
+		}
+	}
+
+	// throttle pace of join events
+	for {
+		secondsElapsed := float64(time.Since(startedAt)) / float64(time.Second)
+		startRate := numStarted / secondsElapsed
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if startRate > params.NumPerSecond {
+			time.Sleep(time.Second)
+		} else {
+			break
 		}
 	}
 
