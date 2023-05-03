@@ -226,22 +226,20 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 
 	for i := 0; i < maxPublishers; i++ {
 		room := fmt.Sprintf("%s_%d", params.Room, i)
-		testerParams := params.TesterParams
-		testerParams.Sequence = i
-		// publishers would not get their own tracks
-		testerParams.expectedTracks = 0
-		testerParams.IdentityPrefix += fmt.Sprintf("_pub_%s", room)
-		testerParams.name = fmt.Sprintf("Pub %d", i)
-		testerParams.Room = room
-		tester := NewLoadTester(testerParams)
+		testerPubParams := params.TesterParams
+		testerPubParams.Sequence = i
+		testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
+		testerPubParams.name = fmt.Sprintf("Pub %d", i)
+		testerPubParams.Room = room
+		tester := NewLoadTester(testerPubParams)
 		testers = append(testers, tester)
 
 		publishers = append(publishers, tester)
 
 		group.Go(func() error {
 			if err := tester.Start(); err != nil {
-				fmt.Println(errors.Wrapf(err, "could not connect %s", testerParams.name))
-				errs.Store(testerParams.name, err)
+				fmt.Println(errors.Wrapf(err, "could not connect %s", testerPubParams.name))
+				errs.Store(testerPubParams.name, err)
 				return nil
 			}
 
@@ -253,11 +251,11 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 				video, err = tester.PublishVideoTrack("video", params.VideoResolution, params.VideoCodec)
 			}
 			if err != nil {
-				errs.Store(testerParams.name, err)
+				errs.Store(testerPubParams.name, err)
 				return nil
 			}
 			t.lock.Lock()
-			t.trackNames[video] = fmt.Sprintf("%dV", testerParams.Sequence)
+			t.trackNames[video] = fmt.Sprintf("%dV", testerPubParams.Sequence)
 			t.lock.Unlock()
 
 			return nil
@@ -265,21 +263,21 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		numStarted++
 
 		for j := 0; j < params.Subscribers; j++ {
-			testerParams := params.TesterParams
-			testerParams.Sequence = j
-			testerParams.expectedTracks = expectedTracks
-			testerParams.Subscribe = true
-			testerParams.IdentityPrefix += fmt.Sprintf("_sub_%s", room)
-			testerParams.Room = room
-			testerParams.name = fmt.Sprintf("Sub %d in %s", j, room)
+			testerSubParams := params.TesterParams
+			testerSubParams.Sequence = j
+			testerSubParams.expectedTracks = expectedTracks
+			testerSubParams.Subscribe = true
+			testerSubParams.IdentityPrefix += fmt.Sprintf("_sub%s", room)
+			testerSubParams.Room = room
+			testerSubParams.name = fmt.Sprintf("Sub %d in %s", j, room)
 
-			tester := NewLoadTester(testerParams)
+			tester := NewLoadTester(testerSubParams)
 			testers = append(testers, tester)
 
 			group.Go(func() error {
 				if err := tester.Start(); err != nil {
-					fmt.Println(errors.Wrapf(err, "could not connect %s", testerParams.name))
-					errs.Store(testerParams.name, err)
+					fmt.Println(errors.Wrapf(err, "could not connect %s", testerSubParams.name))
+					errs.Store(testerSubParams.name, err)
 					return nil
 				}
 

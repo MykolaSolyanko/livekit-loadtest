@@ -18,5 +18,3 @@ bin/
 dist/
 
 .DS_Store
-
-livekit-cli

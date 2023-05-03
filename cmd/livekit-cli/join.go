@@ -20,34 +20,32 @@ import (
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
-var (
-	JoinCommands = []*cli.Command{
-		{
-			Name:     "join-room",
-			Usage:    "Joins a room as a participant",
-			Action:   joinRoom,
-			Category: "Simulate",
-			Flags: withDefaultFlags(
-				roomFlag,
-				identityFlag,
-				&cli.BoolFlag{
-					Name:  "publish-demo",
-					Usage: "publish demo video as a loop",
-				},
-				&cli.StringSliceFlag{
-					Name: "publish",
-					Usage: "files to publish as tracks to room (supports .h264, .ivf, .ogg). " +
-						"can be used multiple times to publish multiple files. " +
-						"can publish from Unix or TCP socket using the format `codec://socket_name` or `codec://host:address` respectively. Valid codecs are h264, vp8, opus",
-				},
-				&cli.Float64Flag{
-					Name:  "fps",
-					Usage: "if video files are published, indicates FPS of video",
-				},
-			),
-		},
-	}
-)
+var JoinCommands = []*cli.Command{
+	{
+		Name:     "join-room",
+		Usage:    "Joins a room as a participant",
+		Action:   joinRoom,
+		Category: "Simulate",
+		Flags: withDefaultFlags(
+			roomFlag,
+			identityFlag,
+			&cli.BoolFlag{
+				Name:  "publish-demo",
+				Usage: "publish demo video as a loop",
+			},
+			&cli.StringSliceFlag{
+				Name: "publish",
+				Usage: "files to publish as tracks to room (supports .h264, .ivf, .ogg). " +
+					"can be used multiple times to publish multiple files. " +
+					"can publish from Unix or TCP socket using the format `codec://socket_name` or `codec://host:address` respectively. Valid codecs are h264, vp8, opus",
+			},
+			&cli.Float64Flag{
+				Name:  "fps",
+				Usage: "if video files are published, indicates FPS of video",
+			},
+		),
+	},
+}
 
 const mimeDelimiter = "://"
 
@@ -125,29 +123,26 @@ func handlePublish(room *lksdk.Room, name string, fps float64) error {
 }
 
 func publishDemo(room *lksdk.Room) error {
-	var tracks []*lksdk.LocalSampleTrack
-
-	loopers, err := provider2.CreateVideoLoopers("high", "", true)
+	looper, err := provider2.CreateVideoLooper("1080p", "h264")
 	if err != nil {
 		return err
 	}
-	for i, looper := range loopers {
-		layer := looper.ToLayer(livekit.VideoQuality(i))
-		track, err := lksdk.NewLocalSampleTrack(looper.Codec(),
-			lksdk.WithSimulcast("demo-video", layer),
-		)
-		if err != nil {
-			return err
-		}
-		if err = track.StartWrite(looper, nil); err != nil {
-			return err
-		}
-		tracks = append(tracks, track)
+
+	track, err := lksdk.NewLocalSampleTrack(looper.Codec())
+	if err != nil {
+		return err
 	}
-	_, err = room.LocalParticipant.PublishSimulcastTrack(tracks, &lksdk.TrackPublicationOptions{
+	if err := track.StartWrite(looper, nil); err != nil {
+		return err
+	}
+
+	if _, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
 		Name: "demo",
-	})
-	return err
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func publishFile(room *lksdk.Room, filename string, fps float64) error {

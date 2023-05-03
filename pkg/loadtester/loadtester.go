@@ -166,15 +166,15 @@ func (t *LoadTester) PublishVideoTrack(name, resolution, codec string) (string, 
 	}
 
 	fmt.Println("publishing video track -", t.room.LocalParticipant.Identity())
-	loopers, err := provider2.CreateVideoLoopers(resolution, codec, false)
+	looper, err := provider2.CreateVideoLooper(resolution, codec)
 	if err != nil {
 		return "", err
 	}
-	track, err := lksdk.NewLocalSampleTrack(loopers[0].Codec())
+	track, err := lksdk.NewLocalSampleTrack(looper.Codec())
 	if err != nil {
 		return "", err
 	}
-	if err := track.StartWrite(loopers[0], nil); err != nil {
+	if err := track.StartWrite(looper, nil); err != nil {
 		return "", err
 	}
 
@@ -188,37 +188,7 @@ func (t *LoadTester) PublishVideoTrack(name, resolution, codec string) (string, 
 }
 
 func (t *LoadTester) PublishSimulcastTrack(name, resolution, codec string) (string, error) {
-	var tracks []*lksdk.LocalSampleTrack
-
-	fmt.Println("publishing simulcast video track -", t.room.LocalParticipant.Identity())
-	loopers, err := provider2.CreateVideoLoopers(resolution, codec, true)
-	if err != nil {
-		return "", err
-	}
-	// for video, publish three simulcast layers
-	for i, looper := range loopers {
-		layer := looper.ToLayer(livekit.VideoQuality(i))
-
-		track, err := lksdk.NewLocalSampleTrack(looper.Codec(),
-			lksdk.WithSimulcast("loadtest-video", layer))
-		if err != nil {
-			return "", err
-		}
-		if err := track.StartWrite(looper, nil); err != nil {
-			return "", err
-		}
-		tracks = append(tracks, track)
-	}
-
-	p, err := t.room.LocalParticipant.PublishSimulcastTrack(tracks, &lksdk.TrackPublicationOptions{
-		Name:   name,
-		Source: livekit.TrackSource_CAMERA,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return p.SID(), nil
+	return "", fmt.Errorf("not implemented")
 }
 
 func (t *LoadTester) getStats() *testerStats {
