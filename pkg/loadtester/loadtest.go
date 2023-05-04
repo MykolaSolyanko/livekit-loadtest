@@ -198,8 +198,19 @@ func (t *LoadTest) RunSuite(ctx context.Context) error {
 	return nil
 }
 
+func (t *LoadTest) GetResolutions() []string {
+	resolutions := strings.Split(t.Params.VideoResolution, " ")
+
+	if len(resolutions) < t.Params.VideoPublishers {
+		for i := len(resolutions); i < t.Params.VideoPublishers; i++ {
+			resolutions = append(resolutions, "1080p")
+		}
+	}
+
+	return resolutions
+}
+
 func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerStats, error) {
-	// params.Room = fmt.Sprintf("testroom%d", rand.Int31n(1000))
 	params.IdentityPrefix = randStringRunes(5)
 
 	expectedTracks := params.VideoPublishers + params.AudioPublishers
@@ -223,6 +234,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 	numStarted := float64(0)
 	errs := syncmap.Map{}
 	maxPublishers := params.VideoPublishers
+	resolutions := t.GetResolutions()
 
 	for i := 0; i < maxPublishers; i++ {
 		room := fmt.Sprintf("%s_%d", params.Room, i)
@@ -235,6 +247,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		testers = append(testers, tester)
 
 		publishers = append(publishers, tester)
+		resolution := resolutions[i]
 
 		group.Go(func() error {
 			if err := tester.Start(); err != nil {
@@ -246,9 +259,9 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 			var video string
 			var err error
 			if params.Simulcast {
-				video, err = tester.PublishSimulcastTrack("video-simulcast", params.VideoResolution, params.VideoCodec)
+				video, err = tester.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
 			} else {
-				video, err = tester.PublishVideoTrack("video", params.VideoResolution, params.VideoCodec)
+				video, err = tester.PublishVideoTrack("video", resolution, params.VideoCodec)
 			}
 			if err != nil {
 				errs.Store(testerPubParams.name, err)

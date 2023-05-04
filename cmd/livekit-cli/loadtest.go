@@ -50,8 +50,8 @@ var LoadTestCommands = []*cli.Command{
 			},
 			&cli.StringFlag{
 				Name:  "video-resolution",
-				Usage: "resolution of video to publish. valid values are: high, medium, or low",
-				Value: "high",
+				Usage: "resolution of video to publish. valid values are: 360p, 720p, 1080p, 1440p (default: 1080p)",
+				Value: "1080p",
 			},
 			&cli.StringFlag{
 				Name:  "video-codec",
