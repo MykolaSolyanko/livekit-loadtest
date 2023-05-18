@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"text/tabwriter"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/syncmap"
@@ -25,13 +25,19 @@ type Params struct {
 	VideoPublishers int
 	AudioPublishers int
 	Subscribers     int
+	DataPublishers  int
 	VideoResolution string
 	VideoCodec      string
 	Duration        time.Duration
 	// number of seconds to spin up per second
-	NumPerSecond     float64
-	Simulcast        bool
-	SimulateSpeakers bool
+	NumPerSecond       float64
+	Simulcast          bool
+	SimulateSpeakers   bool
+	HighQualityViewer  int
+	MediumQualityView  int
+	LowQualityViewer   int
+	DataPacketByteSize int
+	DataBitrate        int
 
 	TesterParams
 }
@@ -41,17 +47,33 @@ func NewLoadTest(params Params) *LoadTest {
 		Params:     params,
 		trackNames: make(map[string]string),
 	}
+
 	if l.Params.NumPerSecond == 0 {
 		// sane default
 		l.Params.NumPerSecond = 5
 	}
+
 	if l.Params.NumPerSecond > 10 {
 		l.Params.NumPerSecond = 10
 	}
+
 	if l.Params.VideoPublishers == 0 && l.Params.AudioPublishers == 0 && l.Params.Subscribers == 0 {
 		l.Params.VideoPublishers = 1
 		l.Params.Subscribers = 1
 	}
+
+	if l.Params.DataPublishers > l.Params.Subscribers {
+		l.Params.DataPublishers = l.Params.Subscribers
+	}
+
+	if l.Params.DataPacketByteSize == 0 {
+		l.Params.DataPacketByteSize = 1024
+	}
+
+	if l.Params.DataBitrate == 0 {
+		l.Params.DataBitrate = 1024 * 1024 // 1Mbps
+	}
+
 	return l
 }
 
@@ -61,41 +83,36 @@ func (t *LoadTest) Run(ctx context.Context) error {
 		return err
 	}
 
-	// tester results
-	summaries := make(map[string]*summary)
-	names := make([]string, 0, len(stats))
-	for name := range stats {
-		if strings.HasPrefix(name, "Pub") {
-			continue
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		testerStats := stats[name]
-		summaries[name] = getTesterSummary(testerStats)
+	summaries := make(map[string]map[string]*summary)
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+	for room, roomStats := range stats {
+		fmt.Fprintf(w, "\nStatistics for room %s\n", room)
 
-		w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
-		_, _ = fmt.Fprintf(w, "\n%s\t| Track\t| Kind\t| Pkts\t| Bitrate\t| Dropped\n", name)
-		trackStatsSlice := make([]*trackStats, 0, len(testerStats.trackStats))
-		for _, ts := range testerStats.trackStats {
-			trackStatsSlice = append(trackStatsSlice, ts)
-		}
-		sort.Slice(trackStatsSlice, func(i, j int) bool {
-			nameI := t.trackNames[trackStatsSlice[i].trackID]
-			nameJ := t.trackNames[trackStatsSlice[j].trackID]
-			return strings.Compare(nameI, nameJ) < 0
-		})
-		for _, trackStats := range trackStatsSlice {
-			dropped := formatStrings(
-				trackStats.packets.Load(), trackStats.dropped.Load())
+		summaries[room] = make(map[string]*summary)
+		for subName, testerStats := range roomStats {
+			summaries[room][subName] = getTesterSummary(testerStats)
 
-			trackName := t.trackNames[trackStats.trackID]
-			_, _ = fmt.Fprintf(w, "\t| %s %s\t| %s\t| %d\t| %s\t| %s\n",
-				trackName, trackStats.trackID, trackStats.kind, trackStats.packets.Load(),
-				formatBitrate(trackStats.bytes.Load(), time.Since(trackStats.startedAt.Load())), dropped)
+			if testerStats.trackStats == nil {
+				continue
+			}
+
+			_, _ = fmt.Fprintf(w, "\n%s\t| Track\t| Kind\t| Pkts\t| Bitrate\t| Latency\t| Dropped\t| Data Pkts\t| Data Bitrate\t| Latency\n", subName)
+
+			latency, dataChannelLatency, dropped := formatStrings(
+				testerStats.trackStats.packets.Load(), testerStats.trackStats.latency.Load(),
+				testerStats.trackStats.latencyCount.Load(), testerStats.trackStats.dataChannelLatency.Load(),
+				testerStats.trackStats.dataChannelLatencyCount.Load(), testerStats.trackStats.dropped.Load())
+
+			trackName := t.trackNames[testerStats.trackStats.trackID]
+
+			_, _ = fmt.Fprintf(w, "\t| %s %s\t| %s\t| %d\t| %s\t| %s\t| %s\t| %d\t| %s\t| %s\n",
+				trackName, testerStats.trackStats.trackID, testerStats.trackStats.kind, testerStats.trackStats.packets.Load(),
+				formatBitrate(testerStats.trackStats.bytes.Load(), time.Since(testerStats.trackStats.startedAt.Load())), latency, dropped,
+				testerStats.trackStats.dataChannelPackets.Load(),
+				formatBitrate(testerStats.trackStats.dataChannelBytes.Load(), time.Since(testerStats.trackStats.dataChannelStartedAt.Load())), dataChannelLatency)
+
+			_ = w.Flush()
 		}
-		_ = w.Flush()
 	}
 
 	if len(summaries) == 0 {
@@ -103,95 +120,39 @@ func (t *LoadTest) Run(ctx context.Context) error {
 	}
 
 	// summary
-	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
-	_, _ = fmt.Fprint(w, "\nSummary\t| Tester\t| Tracks\t| Bitrate\t| Total Dropped\t| Error\n")
+	for name, subSummary := range summaries {
+		w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+		fmt.Fprintf(w, "\nSummary for room %s\n", name)
+		_, _ = fmt.Fprint(w, "\nSummary\t| Tester\t| Bitrate\t| Latency\t| Total Dropped\t| Data Bitrate\t| Latency\t| Error\n")
 
-	for _, name := range names {
-		s := summaries[name]
-		sDropped := formatStrings(s.packets, s.dropped)
-		sBitrate := formatBitrate(s.bytes, s.elapsed)
-		_, _ = fmt.Fprintf(w, "\t| %s\t| %d/%d\t| %s\t| %s\t| %s\n",
-			name, s.tracks, s.expected, sBitrate, sDropped, s.errString)
-	}
+		for subName, summary := range subSummary {
+			sLatency, sDataChannelLatency, sDropped := formatStrings(
+				summary.packets, summary.latency, summary.latencyCount, summary.dataChannelLatency,
+				summary.dataChannelLatencyCount, summary.dropped)
 
-	s := getTestSummary(summaries)
-	sDropped := formatStrings(s.packets, s.dropped)
-	// avg bitrate per sub
-	sBitrate := fmt.Sprintf("%s (%s avg)",
-		formatBitrate(s.bytes, s.elapsed),
-		formatBitrate(s.bytes/int64(len(summaries)), s.elapsed),
-	)
-	_, _ = fmt.Fprintf(w, "\t| %s\t| %d/%d\t| %s\t| %s\t| %d\n",
-		"Total", s.tracks, s.expected, sBitrate, sDropped, s.errCount)
-
-	_ = w.Flush()
-	return nil
-}
-
-func (t *LoadTest) RunSuite(ctx context.Context) error {
-	cases := []*struct {
-		publishers  int
-		subscribers int
-		video       bool
-
-		tracks  int64
-		latency time.Duration
-		dropped float64
-	}{
-		{publishers: 10, subscribers: 10, video: false},
-		{publishers: 10, subscribers: 100, video: false},
-		{publishers: 10, subscribers: 500, video: false},
-		{publishers: 10, subscribers: 1000, video: false},
-		{publishers: 50, subscribers: 50, video: false},
-		{publishers: 100, subscribers: 50, video: false},
-
-		{publishers: 10, subscribers: 10, video: true},
-		{publishers: 10, subscribers: 100, video: true},
-		{publishers: 10, subscribers: 500, video: true},
-		{publishers: 1, subscribers: 100, video: true},
-		{publishers: 1, subscribers: 1000, video: true},
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
-	_, _ = fmt.Fprint(w, "\nPubs\t| Subs\t| Tracks\t| Audio\t| Video\t| Packet loss\t| Errors\n")
-
-	for _, c := range cases {
-		caseParams := t.Params
-		videoString := "Yes"
-		if c.video {
-			caseParams.VideoPublishers = c.publishers
-		} else {
-			caseParams.AudioPublishers = c.publishers
-			videoString = "No"
-		}
-		caseParams.Subscribers = c.subscribers
-		caseParams.Simulcast = true
-		if caseParams.Duration == 0 {
-			caseParams.Duration = 15 * time.Second
-		}
-		fmt.Printf("\nRunning test: %d pub, %d sub, video: %s\n", c.publishers, c.subscribers, videoString)
-
-		stats, err := t.run(ctx, caseParams)
-		if err != nil {
-			return err
-		}
-		if ctx.Err() != nil {
-			return err
+			sBitrate := formatBitrate(summary.bytes, summary.elapsed)
+			sChannelBitrate := formatBitrate(summary.channelBytes, summary.channelElapsed)
+			_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %s\t| %s\t| %s\t| %s\t| %s\n",
+				subName, sBitrate, sLatency, sDropped, sChannelBitrate, sDataChannelLatency, summary.errString)
 		}
 
-		var tracks, packets, dropped, errCount int64
-		for _, testerStats := range stats {
-			for _, trackStats := range testerStats.trackStats {
-				tracks++
-				packets += trackStats.packets.Load()
-				dropped += trackStats.dropped.Load()
-			}
-			if testerStats.err != nil {
-				errCount++
-			}
-		}
-		_, _ = fmt.Fprintf(w, "%d\t| %d\t| %d\t| Yes\t| %s\t| %.3f%%| %d\t\n",
-			c.publishers, c.subscribers, tracks, videoString, 100*float64(dropped)/float64(dropped+packets), errCount)
+		s := getTestSummary(subSummary)
+		sLatency, sDataChannelLatency, sDropped := formatStrings(
+			s.packets, s.latency, s.latencyCount, s.dataChannelLatency, s.dataChannelLatencyCount, s.dropped)
+		// avg bitrate per sub
+		sBitrate := fmt.Sprintf("%s (%s avg)",
+			formatBitrate(s.bytes, s.elapsed),
+			formatBitrate(s.bytes/int64(len(summaries)), s.elapsed),
+		)
+		// avg data channel bitrate per sub
+		sChannelBitrate := fmt.Sprintf("%s (%s avg)",
+			formatBitrate(s.channelBytes, s.channelElapsed),
+			formatBitrate(s.channelBytes/int64(len(summaries)), s.channelElapsed),
+		)
+		_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %s\t| %s\t| %s\t| %s\t| %d\n",
+			"Total", sBitrate, sLatency, sDropped, sChannelBitrate, sDataChannelLatency, s.errCount)
+
+		_ = w.Flush()
 	}
 
 	_ = w.Flush()
@@ -210,7 +171,7 @@ func (t *LoadTest) GetResolutions() []string {
 	return resolutions
 }
 
-func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerStats, error) {
+func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[string]*testerStats, error) {
 	params.IdentityPrefix = randStringRunes(5)
 
 	expectedTracks := params.VideoPublishers + params.AudioPublishers
@@ -226,6 +187,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		participantStrings = append(participantStrings, fmt.Sprintf("%d subscribers", params.Subscribers*expectedTracks))
 	}
 
+	if params.DataPublishers > 0 {
+		participantStrings = append(participantStrings, fmt.Sprintf("%d data publishers", params.DataPublishers))
+	}
+
 	fmt.Printf("Starting load test with %s\n", strings.Join(participantStrings, ", "))
 
 	var publishers, testers []*LoadTester
@@ -236,6 +201,12 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 	maxPublishers := params.VideoPublishers
 	resolutions := t.GetResolutions()
 
+	splitVideoQualityViewers(
+		&params.HighQualityViewer, &params.MediumQualityView, &params.LowQualityViewer,
+		params.Subscribers, params.Simulcast)
+
+	ready := make(chan struct{})
+
 	for i := 0; i < maxPublishers; i++ {
 		room := fmt.Sprintf("%s_%d", params.Room, i)
 		testerPubParams := params.TesterParams
@@ -243,8 +214,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
 		testerPubParams.name = fmt.Sprintf("Pub %d", i)
 		testerPubParams.Room = room
-		tester := NewLoadTester(testerPubParams)
-		testers = append(testers, tester)
+		tester := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
 
 		publishers = append(publishers, tester)
 		resolution := resolutions[i]
@@ -275,21 +245,53 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		})
 		numStarted++
 
+		high := params.HighQualityViewer
+		medium := params.MediumQualityView
+		low := params.LowQualityViewer
+
+		var dataPublisher int = 0
+
 		for j := 0; j < params.Subscribers; j++ {
 			testerSubParams := params.TesterParams
 			testerSubParams.Sequence = j
 			testerSubParams.expectedTracks = expectedTracks
 			testerSubParams.Subscribe = true
+			testerSubParams.Resolution = resolution
 			testerSubParams.IdentityPrefix += fmt.Sprintf("_sub%s", room)
 			testerSubParams.Room = room
 			testerSubParams.name = fmt.Sprintf("Sub %d in %s", j, room)
 
-			tester := NewLoadTester(testerSubParams)
+			quality := livekit.VideoQuality_HIGH
+
+			if high > 0 {
+				quality = livekit.VideoQuality_HIGH
+				high--
+			} else if medium > 0 {
+				quality = livekit.VideoQuality_MEDIUM
+				medium--
+			} else if low > 0 {
+				quality = livekit.VideoQuality_LOW
+				low--
+			}
+
+			tester := NewLoadTester(testerSubParams, quality)
 			testers = append(testers, tester)
 
 			group.Go(func() error {
 				if err := tester.Start(); err != nil {
 					fmt.Println(errors.Wrapf(err, "could not connect %s", testerSubParams.name))
+					errs.Store(testerSubParams.name, err)
+					return nil
+				}
+
+				if dataPublisher >= params.DataPublishers {
+					return nil
+				}
+
+				dataPublisher++
+
+				if err := tester.PublishData(
+					params.DataPacketByteSize, params.DataBitrate, livekit.DataPacket_RELIABLE, ready); err != nil {
 					errs.Store(testerSubParams.name, err)
 					return nil
 				}
@@ -305,6 +307,8 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		secondsElapsed := float64(time.Since(startedAt)) / float64(time.Second)
 		startRate := numStarted / secondsElapsed
 		if err := ctx.Err(); err != nil {
+			close(ready)
+
 			return nil, err
 		}
 		if startRate > params.NumPerSecond {
@@ -321,7 +325,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		})
 		speakerSim.Start()
 	}
+
 	if err := group.Wait(); err != nil {
+		close(ready)
+
 		return nil, err
 	}
 
@@ -331,6 +338,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		duration = 1000 * time.Hour
 	}
 	fmt.Printf("Finished connecting to room, waiting %s\n", duration.String())
+	close(ready)
 
 	select {
 	case <-ctx.Done():
@@ -343,14 +351,48 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]*testerSt
 		speakerSim.Stop()
 	}
 
-	stats := make(map[string]*testerStats)
+	stats := make(map[string]map[string]*testerStats)
 	for _, t := range testers {
 		t.Stop()
-		stats[t.params.name] = t.getStats()
+		if stats[t.params.Room] == nil {
+			stats[t.params.Room] = make(map[string]*testerStats)
+		}
+		stats[t.params.Room][t.params.name] = t.getStats()
 		if e, _ := errs.Load(t.params.name); e != nil {
-			stats[t.params.name].err = e.(error)
+			stats[t.params.Room][t.params.name].err = e.(error)
 		}
 	}
 
 	return stats, nil
+}
+
+func splitVideoQualityViewers(high, medium, low *int, subscribers int, simulcasting bool) {
+	if !simulcasting {
+		*high = subscribers
+		return
+	}
+
+	if *high > subscribers {
+		*high = subscribers
+		return
+	}
+
+	if *high == 0 && *medium == 0 && *low == 0 {
+		*high = subscribers
+		return
+	}
+
+	if *high+*medium > subscribers {
+		*medium = subscribers - *high
+		return
+	}
+
+	if *high+*medium+*low > subscribers {
+		*low = subscribers - *high - *medium
+		return
+	}
+
+	if *high+*medium+*low < subscribers {
+		*high += subscribers - *high - *medium - *low
+	}
 }

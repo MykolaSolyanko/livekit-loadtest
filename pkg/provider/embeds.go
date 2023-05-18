@@ -23,6 +23,7 @@ type videoSpec struct {
 	kbps       int
 	fps        int
 	resolution string
+	quality    livekit.VideoQuality
 }
 
 func (v *videoSpec) Name() string {
@@ -37,9 +38,9 @@ func (v *videoSpec) Name() string {
 	return fmt.Sprintf("resources/%s_%s_%d.%s", v.prefix, size, v.kbps, ext)
 }
 
-func (v *videoSpec) ToVideoLayer(quality livekit.VideoQuality) *livekit.VideoLayer {
+func (v *videoSpec) ToVideoLayer() *livekit.VideoLayer {
 	return &livekit.VideoLayer{
-		Quality: quality,
+		Quality: v.quality,
 		Height:  uint32(v.height),
 		Width:   uint32(v.width),
 		Bitrate: v.bitrate(),
@@ -50,56 +51,100 @@ func (v *videoSpec) bitrate() uint32 {
 	return uint32(v.kbps * 1000)
 }
 
-func createSpec(prefix string, resolution string, codec string, bitrate int) *videoSpec {
+func prepareVideoSpecs(prefix string, resolution string, codec string, bitrate ...int) videoSpecParam {
 	videoFps := 24
 
-	var height, width int
-
-	switch resolution {
-	case "360p":
-		height = 360
-		width = 640
-	case "720p":
-		height = 720
-		width = 1280
-	case "1080p":
-		height = 1080
-		width = 1920
-	case "1440p":
-		height = 1440
-		width = 2560
-	default:
-		height = 1080
-		width = 1920
+	ratios, ok := resolutions[resolution]
+	if !ok {
+		panic(fmt.Sprintf("unsupported resolution: %s", resolution))
 	}
 
-	return &videoSpec{
-		prefix:     prefix,
-		codec:      codec,
-		kbps:       bitrate,
-		fps:        videoFps,
+	if len(bitrate) != len(bitrate) {
+		panic("bitrate must match number of ratios")
+	}
+
+	specs := make([]*videoSpec, len(ratios))
+	for i, bitrate := range bitrate {
+		specs[i] = &videoSpec{
+			prefix:     prefix,
+			codec:      codec,
+			kbps:       bitrate,
+			fps:        videoFps,
+			resolution: resolution,
+			height:     ratios[i].Height,
+			width:      ratios[i].Width,
+			quality:    ratios[i].Quality,
+		}
+	}
+
+	return videoSpecParam{
+		specs:      specs,
 		resolution: resolution,
-		height:     height,
-		width:      width,
+		codec:      codec,
 	}
+}
+
+type Ratio struct {
+	Width   int
+	Height  int
+	Quality livekit.VideoQuality
+}
+
+type videoSpecParam struct {
+	codec      string
+	resolution string
+	specs      []*videoSpec
 }
 
 var (
 	//go:embed resources
 	res embed.FS
 
-	videoSpecs []*videoSpec
-	videoIndex atomic.Int64
-	audioNames []string
-	audioIndex atomic.Int64
+	videoSpecs  []videoSpecParam
+	videoIndex  atomic.Int64
+	audioNames  []string
+	audioIndex  atomic.Int64
+	resolutions map[string][]Ratio
 )
 
+func prepareResolutions() {
+	resolutions = make(map[string][]Ratio)
+	resolutions["1440p"] = []Ratio{
+		{Width: 2560, Height: 1440, Quality: livekit.VideoQuality_HIGH},
+		{Width: 2048, Height: 1152, Quality: livekit.VideoQuality_MEDIUM},
+		{Width: 1024, Height: 576, Quality: livekit.VideoQuality_LOW},
+	}
+
+	resolutions["1080p"] = []Ratio{
+		{Width: 1920, Height: 1080, Quality: livekit.VideoQuality_HIGH},
+		{Width: 800, Height: 450, Quality: livekit.VideoQuality_MEDIUM},
+		{Width: 640, Height: 360, Quality: livekit.VideoQuality_LOW},
+	}
+	resolutions["720p"] = []Ratio{
+		{Width: 1280, Height: 720, Quality: livekit.VideoQuality_HIGH},
+		{Width: 800, Height: 450, Quality: livekit.VideoQuality_MEDIUM},
+		{Width: 640, Height: 360, Quality: livekit.VideoQuality_LOW},
+	}
+
+	resolutions["360p"] = []Ratio{
+		{Width: 640, Height: 360, Quality: livekit.VideoQuality_HIGH},
+		{Width: 640, Height: 360, Quality: livekit.VideoQuality_MEDIUM},
+		{Width: 640, Height: 360, Quality: livekit.VideoQuality_LOW},
+	}
+}
+
+func GetVideoResolution(resolution string) []Ratio {
+	return resolutions[resolution]
+}
+
 func init() {
-	videoSpecs = []*videoSpec{
-		createSpec("butterfly", "360p", h264Codec, 460),
-		createSpec("butterfly", "720p", h264Codec, 1800),
-		createSpec("butterfly", "1080p", h264Codec, 4100),
-		createSpec("butterfly", "1440p", h264Codec, 7300),
+	prepareResolutions()
+
+	videoSpecs = []videoSpecParam{
+		prepareVideoSpecs("butterfly", "360p", h264Codec, 460, 460, 460),
+		prepareVideoSpecs("butterfly", "720p", h264Codec, 1800, 720, 460),
+		prepareVideoSpecs("butterfly", "1080p", h264Codec, 4100, 720, 460),
+		prepareVideoSpecs("butterfly", "1440p", h264Codec, 7300, 4800, 1200),
 	}
 	audioNames = []string{
 		"change-amelia",
@@ -112,7 +157,7 @@ func init() {
 	}
 }
 
-func getVideoSpecs(videoCodec string, resolution string) *videoSpec {
+func getVideoSpecs(videoCodec string, resolution string) []*videoSpec {
 	if videoCodec == "" {
 		videoCodec = h264Codec
 	}
@@ -123,37 +168,46 @@ func getVideoSpecs(videoCodec string, resolution string) *videoSpec {
 
 	for _, spec := range videoSpecs {
 		if spec.codec == videoCodec && spec.resolution == resolution {
-			return spec
+			return spec.specs
 		}
 	}
 
 	return nil
 }
 
-func CreateVideoLooper(resolution string, codecFilter string) (VideoLooper, error) {
-	spec := getVideoSpecs(codecFilter, resolution)
-	if spec == nil {
+func CreateVideoLoopers(resolution string, codecFilter string, simulcast bool) ([]VideoLooper, error) {
+	specs := getVideoSpecs(codecFilter, resolution)
+	if specs == nil {
 		return nil, fmt.Errorf("could not find video spec for %s %s", codecFilter, resolution)
 	}
 
-	var looper VideoLooper
+	var loopers []VideoLooper
 
-	f, err := res.Open(spec.Name())
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	if spec.codec == h264Codec {
-		if looper, err = NewH264VideoLooper(f, spec); err != nil {
-			return nil, err
-		}
-	} else if spec.codec == vp8Codec {
-		if looper, err = NewVP8VideoLooper(f, spec); err != nil {
-			return nil, err
-		}
+	if !simulcast {
+		specs = specs[:1]
 	}
 
-	return looper, nil
+	for _, spec := range specs {
+		f, err := res.Open(spec.Name())
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		var looper VideoLooper
+		if spec.codec == h264Codec {
+			if looper, err = NewH264VideoLooper(f, spec); err != nil {
+				return nil, err
+			}
+		} else if spec.codec == vp8Codec {
+			if looper, err = NewVP8VideoLooper(f, spec); err != nil {
+				return nil, err
+			}
+		}
+
+		loopers = append(loopers, looper)
+	}
+
+	return loopers, nil
 }
 
 func CreateAudioLooper() (*OpusAudioLooper, error) {

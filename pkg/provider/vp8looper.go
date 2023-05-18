@@ -54,8 +54,8 @@ func (l *VP8VideoLooper) NextSample() (media.Sample, error) {
 	return l.nextSample(true)
 }
 
-func (l *VP8VideoLooper) ToLayer(quality livekit.VideoQuality) *livekit.VideoLayer {
-	return l.spec.ToVideoLayer(quality)
+func (l *VP8VideoLooper) ToLayer() *livekit.VideoLayer {
+	return l.spec.ToVideoLayer()
 }
 
 func (l *VP8VideoLooper) nextSample(rewindEOF bool) (media.Sample, error) {

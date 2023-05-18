@@ -123,26 +123,29 @@ func handlePublish(room *lksdk.Room, name string, fps float64) error {
 }
 
 func publishDemo(room *lksdk.Room) error {
-	looper, err := provider2.CreateVideoLooper("1080p", "h264")
+	var tracks []*lksdk.LocalSampleTrack
+
+	loopers, err := provider2.CreateVideoLoopers("1080p", "h264", true)
 	if err != nil {
 		return err
 	}
-
-	track, err := lksdk.NewLocalSampleTrack(looper.Codec())
-	if err != nil {
-		return err
+	for _, looper := range loopers {
+		layer := looper.ToLayer()
+		track, err := lksdk.NewLocalSampleTrack(looper.Codec(),
+			lksdk.WithSimulcast("demo-video", layer),
+		)
+		if err != nil {
+			return err
+		}
+		if err = track.StartWrite(looper, nil); err != nil {
+			return err
+		}
+		tracks = append(tracks, track)
 	}
-	if err := track.StartWrite(looper, nil); err != nil {
-		return err
-	}
-
-	if _, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
+	_, err = room.LocalParticipant.PublishSimulcastTrack(tracks, &lksdk.TrackPublicationOptions{
 		Name: "demo",
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
+	return err
 }
 
 func publishFile(room *lksdk.Room, filename string, fps float64) error {

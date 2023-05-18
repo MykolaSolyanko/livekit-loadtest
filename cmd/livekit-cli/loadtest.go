@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/urfave/cli/v2"
@@ -41,8 +40,34 @@ var LoadTestCommands = []*cli.Command{
 				Usage: "number of participants that would publish audio tracks",
 			},
 			&cli.IntFlag{
+				Name:  "data-publishers",
+				Usage: "number of participants that would publish data packets",
+			},
+			&cli.IntFlag{
+				Name:  "data-packet-bytes",
+				Usage: "size of data packet in bytes to publish",
+				Value: 1024,
+			},
+			&cli.IntFlag{
+				Name:  "data-bitrate",
+				Usage: "bitrate in kbps of data channel to publish",
+				Value: 1024,
+			},
+			&cli.IntFlag{
 				Name:  "subscribers",
 				Usage: "number of participants that would subscribe to tracks",
+			},
+			&cli.IntFlag{
+				Name:  "high",
+				Usage: "number of participants that would subscribe to high quality tracks.",
+			},
+			&cli.IntFlag{
+				Name:  "medium",
+				Usage: "number of participants that would subscribe to medium quality tracks.",
+			},
+			&cli.IntFlag{
+				Name:  "low",
+				Usage: "number of participants that would subscribe to low quality tracks.",
 			},
 			&cli.StringFlag{
 				Name:  "identity-prefix",
@@ -104,34 +129,30 @@ func loadTest(cCtx *cli.Context) error {
 	}()
 
 	params := loadtester.Params{
-		VideoResolution:  cCtx.String("video-resolution"),
-		VideoCodec:       cCtx.String("video-codec"),
-		Duration:         cCtx.Duration("duration"),
-		NumPerSecond:     cCtx.Float64("num-per-second"),
-		Simulcast:        !cCtx.Bool("no-simulcast"),
-		SimulateSpeakers: cCtx.Bool("simulate-speakers"),
+		VideoResolution:   cCtx.String("video-resolution"),
+		VideoCodec:        cCtx.String("video-codec"),
+		Duration:          cCtx.Duration("duration"),
+		NumPerSecond:      cCtx.Float64("num-per-second"),
+		Simulcast:         !cCtx.Bool("no-simulcast"),
+		SimulateSpeakers:  cCtx.Bool("simulate-speakers"),
+		HighQualityViewer: cCtx.Int("high"),
+		MediumQualityView: cCtx.Int("medium"),
+		LowQualityViewer:  cCtx.Int("low"),
 		TesterParams: loadtester.TesterParams{
 			URL:            pc.URL,
 			APIKey:         pc.APIKey,
 			APISecret:      pc.APISecret,
 			Room:           "load-test",
 			IdentityPrefix: cCtx.String("identity-prefix"),
-			Layout:         loadtester.LayoutFromString(cCtx.String("layout")),
 		},
-	}
-
-	if cCtx.Bool("run-all") {
-		// leave out room name and pub/sub counts
-		if params.Duration == 0 {
-			params.Duration = time.Second * 15
-		}
-		test := loadtester.NewLoadTest(params)
-		return test.RunSuite(ctx)
 	}
 
 	params.VideoPublishers = cCtx.Int("video-publishers")
 	params.AudioPublishers = cCtx.Int("audio-publishers")
+	params.DataPublishers = cCtx.Int("data-publishers")
 	params.Subscribers = cCtx.Int("subscribers")
+	params.DataPacketByteSize = cCtx.Int("data-packet-bytes")
+	params.DataBitrate = cCtx.Int("data-bitrate") * 1024
 
 	test := loadtester.NewLoadTest(params)
 	return test.Run(ctx)

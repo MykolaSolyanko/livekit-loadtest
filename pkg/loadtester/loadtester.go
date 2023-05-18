@@ -1,6 +1,7 @@
 package loadtester
 
 import (
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"time"
@@ -19,45 +20,16 @@ import (
 type LoadTester struct {
 	params TesterParams
 
-	subscribedParticipants map[string]*lksdk.RemoteParticipant
-	lock                   sync.Mutex
-	room                   *lksdk.Room
-	running                atomic.Bool
+	lock    sync.Mutex
+	room    *lksdk.Room
+	running atomic.Bool
 	// participant ID => quality
-	trackQualities map[string]livekit.VideoQuality
-
-	stats *sync.Map
-}
-
-type Layout string
-
-const (
-	// LayoutSpeaker - one user at 1280x720, 5 at 356x200
-	LayoutSpeaker Layout = "speaker"
-	// LayoutGrid3x3 - 9 participants at 400x225
-	LayoutGrid3x3 Layout = "3x3"
-	// LayoutGrid4x4 - 16 participants at 320x180
-	LayoutGrid4x4 Layout = "4x4"
-	// LayoutGrid5x5 - 25 participants at 256x144
-	LayoutGrid5x5 Layout = "5x5"
-
-	highWidth    = 1280
-	highHeight   = 720
-	mediumWidth  = 640
-	mediumHeight = 360
-	lowWidth     = 320
-	lowHeight    = 180
-)
-
-func LayoutFromString(str string) Layout {
-	if str == string(LayoutGrid3x3) {
-		return LayoutGrid3x3
-	} else if str == string(LayoutGrid4x4) {
-		return LayoutGrid4x4
-	} else if str == string(LayoutGrid5x5) {
-		return LayoutGrid5x5
-	}
-	return LayoutSpeaker
+	trackQualities    map[string]livekit.VideoQuality
+	quality           livekit.VideoQuality
+	dataPublishing    atomic.Bool
+	dataChannelLoaded atomic.Bool
+	stats             atomic.Value
+	// stats             *trackStats
 }
 
 type TesterParams struct {
@@ -66,7 +38,7 @@ type TesterParams struct {
 	APISecret      string
 	Room           string
 	IdentityPrefix string
-	Layout         Layout
+	Resolution     string
 	// true to subscribe to all published tracks
 	Subscribe bool
 
@@ -75,12 +47,11 @@ type TesterParams struct {
 	expectedTracks int
 }
 
-func NewLoadTester(params TesterParams) *LoadTester {
+func NewLoadTester(params TesterParams, quality livekit.VideoQuality) *LoadTester {
 	return &LoadTester{
-		params:                 params,
-		stats:                  &sync.Map{},
-		trackQualities:         make(map[string]livekit.VideoQuality),
-		subscribedParticipants: make(map[string]*lksdk.RemoteParticipant),
+		params:         params,
+		quality:        quality,
+		trackQualities: make(map[string]livekit.VideoQuality),
 	}
 }
 
@@ -97,6 +68,7 @@ func (t *LoadTester) Start() error {
 				fmt.Printf("track subscription failed, lp:%v, sid:%v, rp:%v/%v\n", identity, sid, rp.Identity(), rp.SID())
 			},
 			OnTrackPublished: t.onTrackPublished,
+			OnDataReceived:   t.onDataReceived,
 		},
 	})
 	var err error
@@ -166,15 +138,15 @@ func (t *LoadTester) PublishVideoTrack(name, resolution, codec string) (string, 
 	}
 
 	fmt.Println("publishing video track -", t.room.LocalParticipant.Identity())
-	looper, err := provider2.CreateVideoLooper(resolution, codec)
+	loopers, err := provider2.CreateVideoLoopers(resolution, codec, false)
 	if err != nil {
 		return "", err
 	}
-	track, err := lksdk.NewLocalSampleTrack(looper.Codec())
+	track, err := lksdk.NewLocalSampleTrack(loopers[0].Codec())
 	if err != nil {
 		return "", err
 	}
-	if err := track.StartWrite(looper, nil); err != nil {
+	if err := track.StartWrite(loopers[0], nil); err != nil {
 		return "", err
 	}
 
@@ -187,32 +159,104 @@ func (t *LoadTester) PublishVideoTrack(name, resolution, codec string) (string, 
 	return p.SID(), nil
 }
 
+func (t *LoadTester) PublishData(packetSizeInByte, bitrate int, kind livekit.DataPacket_Kind, ready chan struct{}) error {
+	if !t.IsRunning() {
+		return nil
+	}
+
+	packetBits := packetSizeInByte * 8
+	sendInterval := time.Duration(float64(time.Second) / float64(bitrate) * float64(packetBits))
+	if sendInterval < time.Millisecond {
+		return fmt.Errorf("packet size too small for bitrate, packets to send per second should be less than 1000")
+	}
+
+	data := prepareData(packetSizeInByte)
+
+	fmt.Println("publishing data track -", t.room.LocalParticipant.Identity())
+	if err := t.room.LocalParticipant.PublishData([]byte("ensure connect"), kind, []string{"unexist"}); err != nil {
+		return err
+	}
+	go func() {
+		if !t.dataPublishing.CompareAndSwap(false, true) {
+			return // already publishing
+		}
+		ticker := time.NewTicker(sendInterval)
+		defer func() {
+			ticker.Stop()
+			t.dataPublishing.Store(false)
+		}()
+
+		<-ready
+		for range ticker.C {
+			if !t.IsRunning() {
+				return
+			}
+
+			data = prepareData(packetSizeInByte)
+
+			err := t.room.LocalParticipant.PublishData(data, kind, nil)
+			if err != nil {
+				fmt.Println("error publishing data", err, "participant", t.room.LocalParticipant.Identity())
+			}
+		}
+	}()
+	return nil
+}
+
 func (t *LoadTester) PublishSimulcastTrack(name, resolution, codec string) (string, error) {
-	return "", fmt.Errorf("not implemented")
+	var tracks []*lksdk.LocalSampleTrack
+
+	fmt.Println("publishing simulcast video track -", t.room.LocalParticipant.Identity())
+	loopers, err := provider2.CreateVideoLoopers(resolution, codec, true)
+	if err != nil {
+		return "", err
+	}
+	// for video, publish three simulcast layers
+	for _, looper := range loopers {
+		layer := looper.ToLayer()
+
+		track, err := lksdk.NewLocalSampleTrack(looper.Codec(),
+			lksdk.WithSimulcast("loadtest-video", layer))
+		if err != nil {
+			return "", err
+		}
+		if err := track.StartWrite(looper, nil); err != nil {
+			return "", err
+		}
+		tracks = append(tracks, track)
+	}
+
+	p, err := t.room.LocalParticipant.PublishSimulcastTrack(tracks, &lksdk.TrackPublicationOptions{
+		Name:   name,
+		Source: livekit.TrackSource_CAMERA,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return p.SID(), nil
 }
 
 func (t *LoadTester) getStats() *testerStats {
 	stats := &testerStats{
 		expectedTracks: t.params.expectedTracks,
-		trackStats:     make(map[string]*trackStats),
+		trackStats:     t.stats.Load().(*trackStats),
 	}
-	t.stats.Range(func(key, value interface{}) bool {
-		stats.trackStats[key.(string)] = value.(*trackStats)
-		return true
-	})
+
 	return stats
 }
 
 func (t *LoadTester) Reset() {
-	stats := sync.Map{}
-	t.stats.Range(func(key, value interface{}) bool {
-		old := value.(*trackStats)
-		stats.Store(key, &trackStats{
-			trackID: old.trackID,
-		})
-		return true
+	stats := t.stats.Load().(*trackStats)
+
+	var trackID string
+	if stats != nil {
+		trackID = stats.trackID
+	}
+
+	t.stats.Store(&trackStats{
+		trackID: trackID,
 	})
-	t.stats = &stats
 }
 
 func (t *LoadTester) Stop() {
@@ -223,110 +267,44 @@ func (t *LoadTester) Stop() {
 	t.room.Disconnect()
 }
 
-func (t *LoadTester) numToSubscribe() int {
-	if !t.params.Subscribe {
-		return 0
-	}
-	switch t.params.Layout {
-	case LayoutSpeaker:
-		return 6
-	case LayoutGrid3x3:
-		return 9
-	case LayoutGrid4x4:
-		return 16
-	case LayoutGrid5x5:
-		return 25
-	default:
-		return 1
-	}
-}
-
 func (t *LoadTester) onTrackPublished(publication *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	t.lock.Lock()
-	if len(t.subscribedParticipants) >= t.numToSubscribe() && t.subscribedParticipants[rp.Identity()] == nil {
-		t.lock.Unlock()
-		return
-	}
-	t.subscribedParticipants[rp.Identity()] = rp
-	t.lock.Unlock()
-
 	publication.SetSubscribed(true)
 }
 
 func (t *LoadTester) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	numSubscribed := 0
-	numTotal := 0
-	t.lock.Lock()
-	for _, p := range t.subscribedParticipants {
-		tracks := p.Tracks()
-		numTotal += len(tracks)
-		for _, t := range tracks {
-			if t.IsSubscribed() {
-				numSubscribed++
-			}
+	value := t.stats.Load()
+	stats, ok := value.(*trackStats)
+	if !ok {
+		stats = &trackStats{
+			trackID: track.ID(),
 		}
-	}
-	t.lock.Unlock()
 
-	s := &trackStats{
-		trackID: track.ID(),
-		kind:    pub.Kind(),
+		t.stats.Store(stats)
 	}
-	t.stats.Store(track.ID(), s)
-	fmt.Println("subscribed to track", t.room.LocalParticipant.Identity(), pub.SID(), pub.Kind(), fmt.Sprintf("%d/%d", numSubscribed, numTotal))
 
-	// consume track
+	stats.kind = pub.Kind()
+
+	fmt.Println("subscribed to track", t.room.LocalParticipant.Identity(), pub.SID(), pub.Kind())
+
 	go t.consumeTrack(track, pub, rp)
 
 	if pub.Kind() != lksdk.TrackKindVideo {
 		return
 	}
 
-	// ensure it's using the right layer
-	qualityCounts := make(map[livekit.VideoQuality]int)
-	t.lock.Lock()
-	for _, q := range t.trackQualities {
-		if count, ok := qualityCounts[q]; ok {
-			qualityCounts[q] = count + 1
-		} else {
-			qualityCounts[q] = 1
-		}
+	resolutions := provider2.GetVideoResolution(t.params.Resolution)
+	if resolutions == nil || len(resolutions) != 3 {
+		fmt.Printf("invalid resolution %s\n", t.params.Resolution)
+		return
 	}
 
-	targetQuality := livekit.VideoQuality_OFF
-	switch t.params.Layout {
-	case LayoutSpeaker:
-		if qualityCounts[livekit.VideoQuality_HIGH] == 0 {
-			targetQuality = livekit.VideoQuality_HIGH
-		} else if qualityCounts[livekit.VideoQuality_LOW] < 5 {
-			targetQuality = livekit.VideoQuality_LOW
-		}
-	case LayoutGrid3x3:
-		if qualityCounts[livekit.VideoQuality_MEDIUM] < 9 {
-			targetQuality = livekit.VideoQuality_MEDIUM
-		}
-	case LayoutGrid4x4:
-		if qualityCounts[livekit.VideoQuality_LOW] < 16 {
-			targetQuality = livekit.VideoQuality_LOW
-		}
-	case LayoutGrid5x5:
-		if qualityCounts[livekit.VideoQuality_LOW] < 25 {
-			targetQuality = livekit.VideoQuality_LOW
-		}
-	}
-	t.trackQualities[rp.SID()] = targetQuality
-	t.lock.Unlock()
-
-	// switch quality and/or enable/disable
-	switch targetQuality {
+	switch t.quality {
 	case livekit.VideoQuality_HIGH:
-		pub.SetVideoDimensions(highWidth, highHeight)
+		pub.SetVideoDimensions(uint32(resolutions[0].Width), uint32(resolutions[0].Height))
 	case livekit.VideoQuality_MEDIUM:
-		pub.SetVideoDimensions(mediumWidth, mediumHeight)
+		pub.SetVideoDimensions(uint32(resolutions[1].Width), uint32(resolutions[1].Height))
 	case livekit.VideoQuality_LOW:
-		pub.SetVideoDimensions(lowWidth, lowHeight)
-	case livekit.VideoQuality_OFF:
-		pub.SetEnabled(false)
+		pub.SetVideoDimensions(uint32(resolutions[2].Width), uint32(resolutions[2].Height))
 	}
 }
 
@@ -347,17 +325,22 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 	} else {
 		dpkt = &codecs.OpusPacket{}
 	}
+
+	value := t.stats.Load()
+	stats, ok := value.(*trackStats)
+	if !ok {
+		fmt.Println("invalid stats")
+		return
+	}
+
 	sb := samplebuilder.New(100, dpkt, track.Codec().ClockRate, samplebuilder.WithPacketDroppedHandler(func() {
-		value, _ := t.stats.Load(track.ID())
-		ts := value.(*trackStats)
-		ts.dropped.Inc()
+		stats.dropped.Inc()
 		if isVideo {
 			rp.WritePLI(track.SSRC())
 		}
 	}))
-	value, _ := t.stats.Load(track.ID())
-	ts := value.(*trackStats)
-	ts.startedAt.Store(time.Now())
+
+	stats.startedAt.Store(time.Now())
 	for {
 		pkt, _, err := track.ReadRTP()
 		if err != nil {
@@ -369,10 +352,65 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 		sb.Push(pkt)
 
 		for _, pkt := range sb.PopPackets() {
-			value, _ := t.stats.Load(track.ID())
-			ts := value.(*trackStats)
-			ts.bytes.Add(int64(len(pkt.Payload)))
-			ts.packets.Inc()
+			stats.bytes.Add(int64(len(pkt.Payload)))
+			stats.packets.Inc()
+
+			if pub.Kind() == lksdk.TrackKindVideo && len(pkt.Payload) > 8 {
+				sentAt := int64(binary.LittleEndian.Uint64(pkt.Payload[len(pkt.Payload)-8:]))
+				latency := time.Now().UnixNano() - sentAt
+				sentTime := time.Unix(0, sentAt)
+
+				// Define a reasonable time range for validation
+				minTime := time.Now().Add(-20 * time.Minute)
+				maxTime := time.Now().Add(20 * time.Minute)
+
+				// Check if sentTime is within the valid range
+				if sentTime.After(minTime) && sentTime.Before(maxTime) {
+					if latency > 0 {
+						stats.latency.Add(latency)
+						stats.latencyCount.Inc()
+					}
+				}
+			}
 		}
 	}
+}
+
+func (t *LoadTester) onDataReceived(data []byte, rp *lksdk.RemoteParticipant) {
+	value := t.stats.Load()
+	stats, ok := value.(*trackStats)
+	if !ok {
+		stats = &trackStats{
+			trackID: rp.SID(),
+		}
+
+		t.stats.Store(stats)
+	}
+
+	load := t.dataChannelLoaded.Load()
+	if !load {
+		t.dataChannelLoaded.Store(true)
+		stats.dataChannelStartedAt.Store(time.Now())
+	}
+
+	stats.dataChannelBytes.Add(int64(len(data)))
+	stats.dataChannelPackets.Inc()
+	if len(data) > 8 {
+		// Extract the timestamp from the data
+		sentAt := int64(binary.LittleEndian.Uint64(data[len(data)-8:]))
+
+		// Calculate the latency
+		latency := time.Now().UnixNano() - sentAt
+		stats.dataChannelLatency.Add(latency)
+		stats.dataChannelLatencyCount.Inc()
+	}
+}
+
+func prepareData(size int) []byte {
+	data := make([]byte, size)
+
+	ts := make([]byte, 8)
+	binary.LittleEndian.PutUint64(ts, uint64(time.Now().UnixNano()))
+
+	return append(data, ts...)
 }

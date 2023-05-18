@@ -388,7 +388,7 @@ func testEgressTemplate(c *cli.Context) error {
 			Room:           roomName,
 			IdentityPrefix: "demo-publisher",
 			Sequence:       i,
-		})
+		}, livekit.VideoQuality_HIGH)
 
 		err := lt.Start()
 		if err != nil {

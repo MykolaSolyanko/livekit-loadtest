@@ -14,5 +14,5 @@ type Looper interface {
 
 type VideoLooper interface {
 	Looper
-	ToLayer(quality livekit.VideoQuality) *livekit.VideoLayer
+	ToLayer() *livekit.VideoLayer
 }

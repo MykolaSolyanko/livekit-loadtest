@@ -2,6 +2,7 @@ package provider
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"time"
 
@@ -54,8 +55,12 @@ func (l *H264VideoLooper) NextSample() (media.Sample, error) {
 	return l.nextSample(true)
 }
 
-func (l *H264VideoLooper) ToLayer(quality livekit.VideoQuality) *livekit.VideoLayer {
-	return l.spec.ToVideoLayer(quality)
+func (l *H264VideoLooper) ToLayer() *livekit.VideoLayer {
+	return l.spec.ToVideoLayer()
+}
+
+func (l *H264VideoLooper) Quality() livekit.VideoQuality {
+	return l.spec.quality
 }
 
 func (l *H264VideoLooper) nextSample(rewindEOF bool) (media.Sample, error) {
@@ -83,9 +88,18 @@ func (l *H264VideoLooper) nextSample(rewindEOF bool) (media.Sample, error) {
 		isFrame = true
 	}
 
+	if isFrame {
+		ts := make([]byte, 8)
+		binary.LittleEndian.PutUint64(ts, uint64(time.Now().UnixNano()))
+		nal.Data = append(nal.Data, ts...)
+	} else {
+		ts := make([]byte, 8)
+		binary.LittleEndian.PutUint64(ts, 12345)
+		nal.Data = append(nal.Data, ts...)
+	}
+
 	sample.Data = nal.Data
 	if isFrame {
-		// return it without duration
 		sample.Duration = l.frameDuration
 	}
 	return sample, nil
