@@ -1,308 +1,250 @@
-<!--BEGIN_BANNER_IMAGE-->
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="/.github/banner_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="/.github/banner_light.png">
-    <img style="width:100%;" alt="The LiveKit icon, the name of the repository and some sample code in the background." src="/.github/banner_light.png">
-  </picture>
-  <!--END_BANNER_IMAGE-->
+# Livekit-CLI
 
-# LiveKit CLI
+Livekit-CLI is a tool designed to perform various types of video load testing. This utility provides several functionalities such as token generation, room connection, and more. This document focuses on the subcommands for load testing functionalities.
 
-<!--BEGIN_DESCRIPTION--><!--END_DESCRIPTION-->
+Before using the utility, you need to build it. In order to do this, you need to have Golang installed on your system. If you already have Golang installed, you can skip the Golang installation step and proceed to the build step.
 
-This package includes command line utilities that interacts with LiveKit. It allows you to:
+## Install Go
+### Install Go on MacOS via Homebrew
 
--   Create access tokens
--   Access LiveKit APIs, create, delete rooms, etc
--   Join a room as a participant, inspecting in-room events
--   Start and manage Egress
--   Perform load testing, efficiently simulating real-world load
-
-# Installation
-
-## Mac
-
-```shell
-brew install livekit-cli
+1. Open a terminal.
+2. Check if Homebrew is installed by typing: 
+```bash
+brew --version
 ```
-
-## Linux
-
-```shell
-curl -sSL https://get.livekit.io/cli | bash
+If Homebrew is not installed, you can install it by running:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
+3. Once Homebrew is installed, you can install Go by typing: 
+```bash
+brew install go
+```
+4. To verify your installation, run: 
+```bash
+go version
+```
+This command should display the version of Go that was installed.
 
-## Windows
+### Install Go on Debian Linux via apt
 
-Download the [latest release here](https://github.com/livekit/livekit-cli/releases/latest)
+1. Open a terminal.
+2. Update your package list by running: 
+```bash
+sudo apt update
+```
+3. Install Go by typing: 
+```bash
+sudo apt install golang-go
+```
+4. To verify your installation, run: 
+```bash
+go version
+```
+This command should display the version of Go that was installed.
 
-## Build from source
+### Install Go Manually from the Official Website (For MacOS or Debian)
 
+1. Visit the Go Downloads page at [https://golang.org/dl/](https://golang.org/dl/).
+2. Download the distribution appropriate for your system. For MacOS, this will be a .pkg file; for Debian Linux, this will be a .tar.gz file.
+3. For MacOS:
+   - Open the downloaded .pkg file and follow the prompts to install Go.
+   - Verify your installation by opening a terminal and running: 
+   ```bash
+   go version
+   ```
+4. For Debian Linux:
+   - Open a terminal and navigate to the directory where the .tar.gz file was downloaded.
+   - Extract the archive using the command 
+   ```bash
+   tar -C /usr/local -xzf go$VERSION.$OS-$ARCH.tar.gz
+   ```
+   - Add /usr/local/go/bin to the PATH environment variable by adding the following line to your /etc/profile (for a system-wide installation) or $HOME/.profile:
+   ```bash
+   export PATH=$PATH:/usr/local/go/bin
+   ```
+   - Verify your installation by opening a new terminal session and running: 
+   ```bash
+   go version
+   ```
+
+**Note:** Make sure you have the necessary privileges to install software on your machine.
+
+## Build livekit-cli
 This repo uses [Git LFS](https://git-lfs.github.com/) for embedded video resources. Please ensure git-lfs is installed on your machine.
-
-```shell
-git clone github.com/livekit/livekit-cli
+```bash
+git clone path
 make install
 ```
 
-# Usage
+**Note:**, if you're building under MacOS Apple Silicon, be careful as you might encounter an error. This error may be related to the command being run under Intel. To ensure that the utility was built, check the bin/ directory. If there's a file in it, then the build was successful.
 
-See `livekit-cli --help` for a complete list of subcommands.
+You can also manually build without `make`.
+```bash
+go build -o bin/livekit-cli ./cmd/livekit-cli
+```
 
-## Set up your project [new]
+## Subcommands
 
-When a default project is set up, you can omit `url`, `api-key`, and `api-secret` when using the CLI.
-You could also set up multiple projects, and switch the active project used with the `--project` flag.
+- `video-publishers`: Specifies the number of video streamers.
+- `subscribers`: Specifies the number of viewers for each publisher. This command depends on the `video-publishers` command.
+- `video-resolution`: Specifies the resolution of the video streamed by the publisher. In this option, the resolution is separated by space and indicated for each publisher specified in the `video-publishers` command.
+- `no-simulcast`: Indicates that the publisher streams without Simulcasting and in high resolution.
+- `duration`: Specifies the test duration.
+- `video-codec`: Specifies the video codec used by the video publisher.
+- `high`, `medium`, `low`: If the `no-simulcast` option is not selected, it specifies the resolution at which the subscriber will consume the video. These parameters depend on the `subscribers` parameter. With the `high` option, we specify how many subscribers will consume the video in high resolution, etc.
+- `data-publishers`: Specifies the number of publishers for the data channel.
+- `data-packet-bytes`, `data-bitrate`: These parameters specify the size of the data packet and how many of these packets will be sent per second.
 
-### Adding a project
+Currently, the following resolution formats are supported: 1440p, 1080p, 720p, 360p. We support the following resolution table with bitrate for these formats:
 
+- 1440p
+    - High - Width: 2560, Height: 1440, Bitrate: 7300
+    - Medium - Width: 2048, Height: 1152, Bitrate 4800
+    - Low - Width: 1024, Height: 576, Bitrate 1200
+- 1080p
+    - High - Width: 1920, Height: 1080, Bitrate: 4100
+    - Medium - Width: 800, Height: 450, Bitrate: 720
+    - Low - Width: 640, Height: 360, Bitrate 460
+- 720p
+    - High - Width: 1280, Height: 720, Bitrate: 1800
+    - Medium - Width: 800, Height: 450, Bitrate: 720
+    - Low - Width: 640, Height: 360, Bitrate 460
+- 360p 
+    - High - Width: 640, Height: 360, Bitrate 460
+    - Medium - Width: 640, Height: 360, Bitrate 460
+    - Low - Width: 640, Height: 360, Bitrate 460
+
+By default, 1080p is supported.
+
+The video codec currently supported for video streaming is h264.
+
+Connection parameters to the Livekit server should also be provided, preferably via environment variables:
+
+```bash
+export LIVEKIT_URL=
+export LIVEKIT_API_KEY=
+export LIVEKIT_API_SECRET=
+```
+
+### Launch Examples:
+
+#### 1. Launch with a single publisher in 1080p resolution and two subscribers with a 1-minute stream interval without simulcasting:
 ```shell
-livekit-cli project add
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --video-publishers 1 --subscribers 2
+
+Statistics for room load-test_0
+
+Sub 0 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCZk3mpLDYZ6QG | video | 26245 | 4.1mbps | 38.245066ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 1 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCZk3mpLDYZ6QG | video | 26245 | 4.1mbps | 38.181305ms | 0 (0%)  | 0         | 0bps         |  -
+
+Summary for room load-test_0
+
+Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 0 in load-test_0 | 4.1mbps               | 38.245066ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 1 in load-test_0 | 4.1mbps               | 38.181305ms | 0 (0%)        | 0bps            |  -      | -
+        | Total                | 8.3mbps (8.3mbps avg) | 38.213186ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
 ```
 
-### Listing projects
-
+#### 2. Launch with two publishers in 1080p and 720p resolutions and two subscribers for each publisher with a 1-minute stream interval without simulcasting:
 ```shell
-livekit-cli project list
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p 720p" --no-simulcast --video-publishers 2 --subscribers 2
+
+Statistics for room load-test_0
+
+Sub 1 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCmzea9vSy82Zr | video | 26533 | 4.1mbps | 37.175218ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 0 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCmzea9vSy82Zr | video | 26533 | 4.1mbps | 37.955722ms | 0 (0%)  | 0         | 0bps         |  -
+
+Statistics for room load-test_1
+
+Sub 0 in load-test_1 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 1V TR_VCM6fYqsEJSxE6 | video | 11530 | 1.7mbps | 38.003357ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 1 in load-test_1 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 1V TR_VCM6fYqsEJSxE6 | video | 11530 | 1.7mbps | 37.166911ms | 0 (0%)  | 0         | 0bps         |  -
+
+Summary for room load-test_0
+
+Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 1 in load-test_0 | 4.1mbps               | 37.175218ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 0 in load-test_0 | 4.1mbps               | 37.955722ms | 0 (0%)        | 0bps            |  -      | -
+        | Total                | 8.3mbps (4.1mbps avg) | 37.56547ms  | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+
+Summary for room load-test_1
+
+Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 0 in load-test_1 | 1.7mbps               | 38.003357ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 1 in load-test_1 | 1.7mbps               | 37.166911ms | 0 (0%)        | 0bps            |  -      | -
+        | Total                | 3.5mbps (1.7mbps avg) | 37.585134ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
 ```
 
-### Switching defaults
-    
+#### 3. Launch with two publishers in 1080p and 720p resolutions and three subscribers for each publisher with a 1-minute stream interval with simulcast, where the first subscriber uses high resolution, the second in medium, and the third in low:
 ```shell
-livekit-cli project set-default <project-name>
+./livekit-cli load-test --duration 1m --video-codec h264 --high=1 --medium=1 --low=1 --video-resolution "1080p 720p" --video-publishers 2 --subscribers 3
+
+Statistics for room load-test_0
+
+Sub 0 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency    | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCmLbkoPbcotGd | video | 26538 | 4.1mbps | 37.33238ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 1 in load-test_0 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCmLbkoPbcotGd | video | 5757 | 795.0kbps | 36.941458ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 2 in load-test_0 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 0V TR_VCmLbkoPbcotGd | video | 4026 | 531.8kbps | 37.663974ms | 0 (0%)  | 0         | 0bps         |  -
+
+Statistics for room load-test_1
+
+Sub 0 in load-test_1 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 1V TR_VCYwqCPtbGmNxh | video | 11542 | 1.7mbps | 38.059655ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 1 in load-test_1 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 1V TR_VCYwqCPtbGmNxh | video | 5434 | 741.8kbps | 38.849474ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 2 in load-test_1 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     | 1V TR_VCYwqCPtbGmNxh | video | 3696 | 478.2kbps | 37.955024ms | 0 (0%)  | 0         | 0bps         |  -
+
+Summary for room load-test_0
+
+Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 0 in load-test_0 | 4.1mbps               | 37.33238ms  | 0 (0%)        | 0bps            |  -      | -
+        | Sub 1 in load-test_0 | 795.0kbps             | 36.941458ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 2 in load-test_0 | 531.8kbps             | 37.663974ms | 0 (0%)        | 0bps            |  -      | -
+        | Total                | 5.5mbps (2.7mbps avg) | 37.31622ms  | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+
+Summary for room load-test_1
+
+Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 0 in load-test_1 | 1.7mbps               | 38.059655ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 1 in load-test_1 | 741.8kbps             | 38.849474ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 2 in load-test_1 | 478.2kbps             | 37.955024ms | 0 (0%)        | 0bps            |  -      | -
+        | Total                | 3.0mbps (1.5mbps avg) | 38.282338ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
 ```
 
-## Publishing to a room
-
-### Publish demo video track
-
-To publish a demo video as a participant's track, use the following.
-
+#### 4. Launch with a single publisher in 1440p resolution, with two data publishers and two subscribers for each publisher with a 1-minute stream interval without simulcasting:
 ```shell
-livekit-cli join-room --room yourroom --identity publisher \
-  --publish-demo
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1440p" --data-publishers 2 --no-simulcast --video-publishers 1 --subscribers 2
+
+Statistics for room load-test_0
+
+Sub 0 in load-test_0 | Track            | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     |  PA_c7x4wmJALxWr | video | 46461 | 7.3mbps | 37.256332ms | 0 (0%)  | 7677      | 1.1mbps      | 31.789094ms
+
+Sub 1 in load-test_0 | Track            | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
+                     |  PA_jmenhWMbuhXd | video | 46461 | 7.3mbps | 37.163675ms | 0 (0%)  | 7676      | 1.1mbps      | 31.704591ms
+
+Summary for room load-test_0
+
+Summary | Tester               | Bitrate                 | Latency     | Total Dropped | Data Bitrate          | Latency     | Error
+        | Sub 0 in load-test_0 | 7.3mbps                 | 37.256332ms | 0 (0%)        | 1.1mbps               | 31.789094ms | -
+        | Sub 1 in load-test_0 | 7.3mbps                 | 37.163675ms | 0 (0%)        | 1.1mbps               | 31.704591ms | -
+        | Total                | 14.7mbps (14.7mbps avg) | 37.210004ms | 0 (0%)        | 2.1mbps (2.1mbps avg) | 31.746845ms | 0
 ```
 
-It'll publish the video track with [simulcast](https://blog.livekit.io/an-introduction-to-webrtc-simulcast-6c5f1f6402eb/), at 720p, 360p, and 180p.
 
-### Publish media files
-
-You can publish your own audio/video files. These tracks files need to be encoded in supported codecs.
-Refer to [encoding instructions](https://github.com/livekit/server-sdk-go/tree/main#publishing-tracks-to-room)
-
-```shell
-livekit-cli join-room --room yourroom --identity publisher \
-  --publish path/to/video.ivf \
-  --publish path/to/audio.ogg \
-  --fps 23.98
-```
-
-This will publish the pre-encoded ivf and ogg files to the room, indicating video FPS of 23.98. Note that the FPS only affects the video; it's important to match video framerate with the source to prevent out of sync issues.
-
-### Publish from FFmpeg
-
-It's possible to publish any source that FFmpeg supports (including live sources such as RTSP) by using it as a transcoder.
-
-This is done by running FFmpeg in a separate process, encoding to a Unix socket. (not available on Windows).
-`livekit-cli` can then read transcoded data from the socket and publishing them to the room.
-
-First run FFmpeg like this:
-
-```shell
-ffmpeg -i <video-file | rtsp://url> \
-  -c:v libx264 -bsf:v h264_mp4toannexb -b:v 2M -profile:v baseline -pix_fmt yuv420p \
-    -x264-params keyint=120 -max_delay 0 -bf 0 \
-    -listen 1 -f h264 unix:/tmp/myvideo.sock \
-  -c:a libopus -page_duration 20000 -vn \
-  	-listen 1 -f opus unix:/tmp/myaudio.sock
-```
-
-This transcodes the input into H.264 baseline profile and Opus.
-
-Then, run `livekit-cli` like this:
-
-```shell
-livekit-cli join-room --room yourroom --identity bot \
-  --publish h264:///tmp/myvideo.sock \
-  --publish opus:///tmp/myaudio.sock
-````
-
-You should now see both video and audio tracks published to the room.
-
-### Publish from TCP (i.e. gstreamer)
-
-It's possible to publish from video streams coming over a TCP socket. `livekit-cli` can act as a TCP client. For example, with a gstreamer pipeline ending in `! tcpserversink port=16400` and streaming H.264.
-
-Run `livekit-cli` like this:
-
-```shell
-livekit-cli join-room --room yourroom --identity bot \
-  --publish h264:///127.0.0.1:16400
-```
-
-### Publish streams from your application
-
-Using unix sockets, it's also possible to publish streams from your application. The tracks need to be encoded into
-a format that WebRTC clients could playback (VP8, H.264, and Opus).
-
-Once you are writing to the socket, you could use `ffplay` to test the stream.
-
-```shell
-ffplay -i unix:/tmp/myvideo.sock
-```
-
-## Recording & egress
-
-Recording requires [egress service](https://docs.livekit.io/guides/egress/) to be set up first.
-
-Example request.json files are [located here](https://github.com/livekit/livekit-cli/tree/main/cmd/livekit-cli/examples).
-
-```shell
-# start room composite (recording of room UI)
-livekit-cli start-room-composite-egress --request request.json
-
-# start track composite (audio + video)
-livekit-cli start-track-composite-egress --request request.json
-
-# start track egress (single audio or video track)
-livekit-cli start-track-egress --request request.json
-```
-
-### Testing egress templates
-
-In order to speed up the development cycle of your recording templates, we provide a sub-command `test-egress-template` that
-helps you to validate your templates.
-
-The command will spin up a few virtual publishers, and then simulate them joining your room
-It'll then open a browser to the template URL, with the correct parameters filled in.
-
-Here's an example:
-
-```shell
-livekit-cli test-egress-template \
-  --base-url http://localhost:3000 \
-  --room <your-room> --layout <your-layout> --video-publishers 3
-```
-
-This command will launch a browser pointed at `http://localhost:3000`, while simulating 3 publishers publishing to your livekit instance.
-
-## Load Testing
-
-Load testing utility for LiveKit. This tool is quite versatile and is able to simulate various types of load.
-
-Note: `livekit-load-tester` has been renamed to sub-command `livekit-cli load-test`
-
-### Quickstart
-
-This guide requires a LiveKit server instance to be set up. You can start a load tester with:
-
-```shell
-livekit-cli load-test \
-  --room test-room --video-publishers 8
-```
-
-This simulates 8 video publishers to the room, with no subscribers. Video tracks are published with simulcast, at 720p, 360p, and 180p.
-
-#### Simulating audio publishers
-
-To test audio capabilities in your app, you can also simulate simultaneous speakers to the room.
-
-```shell
-livekit-cli load-test \
-  --room test-room --audio-publishers 5
-```
-
-The above simulates 5 concurrent speakers, each playing back a pre-recorded audio sample at the same time.
-In a meeting, typically there's only one active speaker at a time, but this can be useful to test audio capabilities.
-
-#### Watch the test
-
-Generate a token so you can log into the room:
-
-```shell
-livekit-cli create-token --join \
-  --room test-room --identity user  
-```
-
-Head over to the [example web client](https://example.livekit.io) and paste in the token, you can see the simulated tracks published by the load tester.
-
-![Load tester screenshot](misc/load-test-screenshot.jpg?raw=true)
-
-### Running on a cloud VM
-
-Due to bandwidth limitations of your ISP, most of us wouldn't have sufficient bandwidth to be able to simulate 100s of users download/uploading from the internet.
-
-We recommend running the load tester from a VM on a cloud instance, where there isn't a bandwidth constraint.
-
-To make this simple, `make` will generate a linux amd64 binary in `bin/`. You can scp the binary to a server instance and run the test there.
-
-### Configuring system settings
-
-Prior to running the load tests, it's important to ensure file descriptor limits have been set correctly. See [Performance tuning docs](https://docs.livekit.io/deploy/test-monitor#performance-tuning).
-
-On the machine that you are running the load tester, they would also need to be applied:
-
-```shell
-ulimit -n 65535
-sysctl -w fs.file-max=2097152
-sysctl -w net.core.somaxconn=65535
-sysctl -w net.core.rmem_max=25165824
-sysctl -w net.core.wmem_max=25165824
-```
-
-### Simulate subscribers
-
-You can run the load tester on multiple machines, each simulating any number of publishers or subscribers.
-
-LiveKit SFU's performance is [measured by](https://docs.livekit.io/deploy/benchmark#measuring-performance) the amount
-of data sent to its subscribers.
-
-Use this command to simulate a load test of 5 publishers, and 500 subscribers:
-
-```shell
-livekit-cli load-test \
-  --duration 1m \
-  --video-publishers 5 \
-  --subscribers 500
-```
-
-It'll print a report like the following. (this run was performed on a 16 core, 32GB memory VM)
-
-```
-Summary | Tester  | Tracks    | Bitrate                 | Latency     | Total Dropped
-        | Sub 0   | 10/10     | 2.2mbps                 | 78.86829ms  | 0 (0%)
-        | Sub 1   | 10/10     | 2.2mbps                 | 78.796542ms | 0 (0%)
-        | Sub 10  | 10/10     | 2.2mbps                 | 79.361718ms | 0 (0%)
-        | Sub 100 | 10/10     | 2.2mbps                 | 79.449831ms | 0 (0%)
-        | Sub 101 | 10/10     | 2.2mbps                 | 80.001104ms | 0 (0%)
-        | Sub 102 | 10/10     | 2.2mbps                 | 79.833373ms | 0 (0%)
-...
-        | Sub 97  | 10/10     | 2.2mbps                 | 79.374331ms | 0 (0%)
-        | Sub 98  | 10/10     | 2.2mbps                 | 79.418816ms | 0 (0%)
-        | Sub 99  | 10/10     | 2.2mbps                 | 79.768568ms | 0 (0%)
-        | Total   | 5000/5000 | 678.7mbps (1.4mbps avg) | 79.923769ms | 0 (0%)
-```
-
-### Advanced usage
-
-You could customize various parameters of the test such as
-
--   --video-publishers: number of video publishers
--   --audio-publishers: number of audio publishers
--   --subscribers: number of subscribers
--   --video-resolution: publishing video resolution. low, medium, high
--   --no-simulcast: disables simulcast
--   --num-per-second: number of testers to start each second
--   --layout: layout to simulate (speaker, 3x3, 4x4, or 5x5)
-
-<!--BEGIN_REPO_NAV-->
-<br/><table>
-<thead><tr><th colspan="2">LiveKit Ecosystem</th></tr></thead>
-<tbody>
-<tr><td>Client SDKs</td><td><a href="https://github.com/livekit/components-js">Components</a> · <a href="https://github.com/livekit/client-sdk-js">JavaScript</a> · <a href="https://github.com/livekit/client-sdk-rust">Rust</a> · <a href="https://github.com/livekit/client-sdk-swift">iOS/macOS</a> · <a href="https://github.com/livekit/client-sdk-android">Android</a> · <a href="https://github.com/livekit/client-sdk-flutter">Flutter</a> · <a href="https://github.com/livekit/client-sdk-unity-web">Unity (web)</a> · <a href="https://github.com/livekit/client-sdk-react-native">React Native (beta)</a></td></tr><tr></tr>
-<tr><td>Server SDKs</td><td><a href="https://github.com/livekit/server-sdk-js">Node.js</a> · <a href="https://github.com/livekit/server-sdk-go">Golang</a> · <a href="https://github.com/livekit/server-sdk-ruby">Ruby</a> · <a href="https://github.com/livekit/server-sdk-kotlin">Java/Kotlin</a> · <a href="https://github.com/agence104/livekit-server-sdk-php">PHP (community)</a> · <a href="https://github.com/tradablebits/livekit-server-sdk-python">Python (community)</a></td></tr><tr></tr>
-<tr><td>Services</td><td><a href="https://github.com/livekit/livekit">Livekit server</a> · <a href="https://github.com/livekit/egress">Egress</a> · <a href="https://github.com/livekit/ingress">Ingress</a></td></tr><tr></tr>
-<tr><td>Resources</td><td><a href="https://docs.livekit.io">Docs</a> · <a href="https://github.com/livekit-examples">Example apps</a> · <a href="https://livekit.io/cloud">Cloud</a> · <a href="https://docs.livekit.io/oss/deployment">Self-hosting</a> · <b>CLI</b></td></tr>
-</tbody>
-</table>
-<!--END_REPO_NAV-->
