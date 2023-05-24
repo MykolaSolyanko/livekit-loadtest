@@ -79,6 +79,10 @@ var LoadTestCommands = []*cli.Command{
 				Value: "1080p",
 			},
 			&cli.StringFlag{
+				Name:  "remote-publisher",
+				Usage: "number of remote publishers to connect to",
+			},
+			&cli.StringFlag{
 				Name:  "video-codec",
 				Usage: "h264 or vp8, both will be used when unset",
 			},
@@ -145,14 +149,14 @@ func loadTest(cCtx *cli.Context) error {
 			Room:           "load-test",
 			IdentityPrefix: cCtx.String("identity-prefix"),
 		},
+		VideoPublishers:    cCtx.Int("video-publishers"),
+		AudioPublishers:    cCtx.Int("audio-publishers"),
+		DataPublishers:     cCtx.Int("data-publishers"),
+		Subscribers:        cCtx.Int("subscribers"),
+		DataPacketByteSize: cCtx.Int("data-packet-bytes"),
+		DataBitrate:        cCtx.Int("data-bitrate") * 1024,
+		RemotePublishers:   cCtx.Int("remote-publisher"),
 	}
-
-	params.VideoPublishers = cCtx.Int("video-publishers")
-	params.AudioPublishers = cCtx.Int("audio-publishers")
-	params.DataPublishers = cCtx.Int("data-publishers")
-	params.Subscribers = cCtx.Int("subscribers")
-	params.DataPacketByteSize = cCtx.Int("data-packet-bytes")
-	params.DataBitrate = cCtx.Int("data-bitrate") * 1024
 
 	test := loadtester.NewLoadTest(params)
 	return test.Run(ctx)

@@ -92,10 +92,6 @@ func (l *H264VideoLooper) nextSample(rewindEOF bool) (media.Sample, error) {
 		ts := make([]byte, 8)
 		binary.LittleEndian.PutUint64(ts, uint64(time.Now().UnixNano()))
 		nal.Data = append(nal.Data, ts...)
-	} else {
-		ts := make([]byte, 8)
-		binary.LittleEndian.PutUint64(ts, 12345)
-		nal.Data = append(nal.Data, ts...)
 	}
 
 	sample.Data = nal.Data

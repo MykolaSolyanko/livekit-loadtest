@@ -33,6 +33,7 @@ type Params struct {
 	NumPerSecond       float64
 	Simulcast          bool
 	SimulateSpeakers   bool
+	RemotePublishers   int
 	HighQualityViewer  int
 	MediumQualityView  int
 	LowQualityViewer   int
@@ -57,9 +58,8 @@ func NewLoadTest(params Params) *LoadTest {
 		l.Params.NumPerSecond = 10
 	}
 
-	if l.Params.VideoPublishers == 0 && l.Params.AudioPublishers == 0 && l.Params.Subscribers == 0 {
+	if l.Params.RemotePublishers == 0 && l.Params.VideoPublishers == 0 && l.Params.AudioPublishers == 0 {
 		l.Params.VideoPublishers = 1
-		l.Params.Subscribers = 1
 	}
 
 	if l.Params.DataPublishers > l.Params.Subscribers {
@@ -81,6 +81,12 @@ func (t *LoadTest) Run(ctx context.Context) error {
 	stats, err := t.run(ctx, t.Params)
 	if err != nil {
 		return err
+	}
+
+	if t.Params.Subscribers == 0 {
+		fmt.Printf("No subscribers, skipping stats\n")
+
+		return nil
 	}
 
 	summaries := make(map[string]map[string]*summary)
@@ -176,6 +182,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 
 	expectedTracks := params.VideoPublishers + params.AudioPublishers
 
+	if params.RemotePublishers > 0 && params.VideoPublishers > 0 {
+		return nil, fmt.Errorf("cannot have remote publishers and video publishers")
+	}
+
 	var participantStrings []string
 	if params.VideoPublishers > 0 {
 		participantStrings = append(participantStrings, fmt.Sprintf("%d video publishers", params.VideoPublishers))
@@ -191,6 +201,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		participantStrings = append(participantStrings, fmt.Sprintf("%d data publishers", params.DataPublishers))
 	}
 
+	if params.RemotePublishers > 0 {
+		participantStrings = append(participantStrings, fmt.Sprintf("%d remote publishers", params.RemotePublishers))
+	}
+
 	fmt.Printf("Starting load test with %s\n", strings.Join(participantStrings, ", "))
 
 	var publishers, testers []*LoadTester
@@ -198,8 +212,13 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 	startedAt := time.Now()
 	numStarted := float64(0)
 	errs := syncmap.Map{}
-	maxPublishers := params.VideoPublishers
 	resolutions := t.GetResolutions()
+	isRemote := params.RemotePublishers > 0
+
+	maxPublishers := params.VideoPublishers
+	if isRemote {
+		maxPublishers = params.RemotePublishers
+	}
 
 	splitVideoQualityViewers(
 		&params.HighQualityViewer, &params.MediumQualityView, &params.LowQualityViewer,
@@ -209,41 +228,44 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 
 	for i := 0; i < maxPublishers; i++ {
 		room := fmt.Sprintf("%s_%d", params.Room, i)
-		testerPubParams := params.TesterParams
-		testerPubParams.Sequence = i
-		testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
-		testerPubParams.name = fmt.Sprintf("Pub %d", i)
-		testerPubParams.Room = room
-		tester := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
-
-		publishers = append(publishers, tester)
 		resolution := resolutions[i]
 
-		group.Go(func() error {
-			if err := tester.Start(); err != nil {
-				fmt.Println(errors.Wrapf(err, "could not connect %s", testerPubParams.name))
-				errs.Store(testerPubParams.name, err)
-				return nil
-			}
+		if !isRemote {
+			testerPubParams := params.TesterParams
+			testerPubParams.Sequence = i
+			testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
+			testerPubParams.name = fmt.Sprintf("Pub %d", i)
+			testerPubParams.Room = room
+			tester := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
 
-			var video string
-			var err error
-			if params.Simulcast {
-				video, err = tester.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
-			} else {
-				video, err = tester.PublishVideoTrack("video", resolution, params.VideoCodec)
-			}
-			if err != nil {
-				errs.Store(testerPubParams.name, err)
-				return nil
-			}
-			t.lock.Lock()
-			t.trackNames[video] = fmt.Sprintf("%dV", testerPubParams.Sequence)
-			t.lock.Unlock()
+			publishers = append(publishers, tester)
 
-			return nil
-		})
-		numStarted++
+			group.Go(func() error {
+				if err := tester.Start(); err != nil {
+					fmt.Println(errors.Wrapf(err, "could not connect %s", testerPubParams.name))
+					errs.Store(testerPubParams.name, err)
+					return nil
+				}
+
+				var video string
+				var err error
+				if params.Simulcast {
+					video, err = tester.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
+				} else {
+					video, err = tester.PublishVideoTrack("video", resolution, params.VideoCodec)
+				}
+				if err != nil {
+					errs.Store(testerPubParams.name, err)
+					return nil
+				}
+				t.lock.Lock()
+				t.trackNames[video] = fmt.Sprintf("%dV", testerPubParams.Sequence)
+				t.lock.Unlock()
+
+				return nil
+			})
+			numStarted++
+		}
 
 		high := params.HighQualityViewer
 		medium := params.MediumQualityView
