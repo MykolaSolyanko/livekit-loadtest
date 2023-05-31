@@ -86,7 +86,9 @@ go build -o bin/livekit-cli ./cmd/livekit-cli
 
 ## Subcommands
 
-- `video-publishers`: Specifies the number of video streamers.
+- `room-name`: Specifies the prefix of the room from which the room names will be created as room-name + publisher number.
+- `start-publisher` and `end-publisher`: These define the number of publishers who will be streaming to different rooms. The room name is determined by the  `room-name` option, and the rooms will then have names like `room-name` + publisher number. It's also possible to specify publishers distributed by indicating the same room-name and start-publisher and `--end-publisher`, considering the previous numbers of publishers. This allows for testing a large number of publishers from different machines on a single server.
+- `start-room-number` and `end-room-number`: These enable the capability to connect to remote rooms. The room name is determined by the `room-name` option. It's also possible to distribute connections from different machines by specifying `start-room-number` and `end-room-number`.
 - `subscribers`: Specifies the number of viewers for each publisher. This command depends on the `video-publishers` command.
 - `video-resolution`: Specifies the resolution of the video streamed by the publisher. In this option, the resolution is separated by space and indicated for each publisher specified in the `video-publishers` command.
 - `no-simulcast`: Indicates that the publisher streams without Simulcasting and in high resolution.
@@ -247,4 +249,68 @@ Summary | Tester               | Bitrate                 | Latency     | Total D
         | Total                | 14.7mbps (14.7mbps avg) | 37.210004ms | 0 (0%)        | 2.1mbps (2.1mbps avg) | 31.746845ms | 0
 ```
 
+#### 5. Launching a remote connection with two publishers and two subscribers on different machines. In this case, a connection to one room will be made from one machine, and to the other from a different machine.
 
+##### Machine 1: Running 2 publishers without subscribers
+
+ ```shell
+ ./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1  --end-publisher 2
+Using url, api-key, api-secret from environment
+Starting load test with 2 video publishers
+publishing video track - hhlhe_pubVM1_1_0
+publishing video track - hhlhe_pubVM1_2_1
+Finished connecting to room, waiting 1m0s
+No subscribers, skipping stats
+ ```
+
+##### Machine 2: Running 2 subscribers to connect to one room on Machine 1
+
+ ```shell
+ ./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --start-room-number 1  --end-room-number 1 --subscribers 2
+Using url, api-key, api-secret from environment
+Starting load test with 2 subscribers, 1 remote publishers
+subscribed to track aopvh_subVM1_1_1 TR_VCm4x7WvFmgMcT video
+subscribed to track aopvh_subVM1_1_0 TR_VCm4x7WvFmgMcT video
+Finished connecting to room, waiting 1m0s
+
+Statistics for room VM1_1
+
+Sub 1 in VM1_1 | Track              | Kind  | Pkts  | Bitrate | Latency   | Dropped | Data Pkts | Data Bitrate | Latency
+               |  TR_VCm4x7WvFmgMcT | video | 26663 | 4.1mbps | 8.01326ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 0 in VM1_1 | Track              | Kind  | Pkts  | Bitrate | Latency  | Dropped | Data Pkts | Data Bitrate | Latency
+               |  TR_VCm4x7WvFmgMcT | video | 26663 | 4.1mbps | 8.0058ms | 0 (0%)  | 0         | 0bps         |  -
+
+Summary for room VM1_1
+
+Summary | Tester         | Bitrate               | Latency   | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 1 in VM1_1 | 4.1mbps               | 8.01326ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 0 in VM1_1 | 4.1mbps               | 8.0058ms  | 0 (0%)        | 0bps            |  -      | -
+        | Total          | 8.2mbps (8.2mbps avg) | 8.00953ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+```
+
+##### Machine 3: Running 2 subscribers to connect to another room on Machine 1
+
+ ```shell
+ ./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --start-room-number 2  --end-room-number 2 --subscribers 2
+Using url, api-key, api-secret from environment
+Starting load test with 2 subscribers, 1 remote publishers
+subscribed to track kkkba_subVM1_2_0 TR_VCFw3yocNkDPZL video
+subscribed to track kkkba_subVM1_2_1 TR_VCFw3yocNkDPZL video
+Finished connecting to room, waiting 1m0s
+
+Statistics for room VM1_2
+
+Sub 0 in VM1_2 | Track              | Kind  | Pkts  | Bitrate | Latency    | Dropped | Data Pkts | Data Bitrate | Latency
+               |  TR_VCFw3yocNkDPZL | video | 26064 | 4.0mbps | 7.843309ms | 0 (0%)  | 0         | 0bps         |  -
+
+Sub 1 in VM1_2 | Track              | Kind  | Pkts  | Bitrate | Latency    | Dropped | Data Pkts | Data Bitrate | Latency
+               |  TR_VCFw3yocNkDPZL | video | 26064 | 4.0mbps | 7.850437ms | 0 (0%)  | 0         | 0bps         |  -
+
+Summary for room VM1_2
+
+Summary | Tester         | Bitrate               | Latency    | Total Dropped | Data Bitrate    | Latency | Error
+        | Sub 1 in VM1_2 | 4.0mbps               | 7.850437ms | 0 (0%)        | 0bps            |  -      | -
+        | Sub 0 in VM1_2 | 4.0mbps               | 7.843309ms | 0 (0%)        | 0bps            |  -      | -
+        | Total          | 7.9mbps (7.9mbps avg) | 7.846873ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+```

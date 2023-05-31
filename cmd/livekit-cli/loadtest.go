@@ -30,10 +30,25 @@ var LoadTestCommands = []*cli.Command{
 				Usage: "duration to run, 1m, 1h (by default will run until canceled)",
 				Value: 0,
 			},
-			&cli.IntFlag{
-				Name:    "video-publishers",
-				Aliases: []string{"publishers"},
-				Usage:   "number of participants that would publish video tracks",
+			&cli.StringFlag{
+				Name:    "start-publisher",
+				Aliases: []string{"start"},
+				Usage:   "start a publisher from given identity",
+			},
+			&cli.StringFlag{
+				Name:    "end-publisher",
+				Aliases: []string{"end"},
+				Usage:   "end a publisher with the given identity",
+			},
+			&cli.StringFlag{
+				Name:    "start-room-number",
+				Aliases: []string{"start-room"},
+				Usage:   "start a room with the given number",
+			},
+			&cli.StringFlag{
+				Name:    "end-room-number",
+				Aliases: []string{"end-room"},
+				Usage:   "end a room with the given number",
 			},
 			&cli.IntFlag{
 				Name:  "audio-publishers",
@@ -79,12 +94,12 @@ var LoadTestCommands = []*cli.Command{
 				Value: "1080p",
 			},
 			&cli.StringFlag{
-				Name:  "remote-publisher",
-				Usage: "number of remote publishers to connect to",
-			},
-			&cli.StringFlag{
 				Name:  "video-codec",
 				Usage: "h264 or vp8, both will be used when unset",
+			},
+			&cli.StringFlag{
+				Name:  "room-name",
+				Usage: "name of the room to join",
 			},
 			&cli.Float64Flag{
 				Name:  "num-per-second",
@@ -146,16 +161,19 @@ func loadTest(cCtx *cli.Context) error {
 			URL:            pc.URL,
 			APIKey:         pc.APIKey,
 			APISecret:      pc.APISecret,
-			Room:           "load-test",
+			Room:           cCtx.String("room-name"),
 			IdentityPrefix: cCtx.String("identity-prefix"),
 		},
-		VideoPublishers:    cCtx.Int("video-publishers"),
-		AudioPublishers:    cCtx.Int("audio-publishers"),
-		DataPublishers:     cCtx.Int("data-publishers"),
-		Subscribers:        cCtx.Int("subscribers"),
-		DataPacketByteSize: cCtx.Int("data-packet-bytes"),
-		DataBitrate:        cCtx.Int("data-bitrate") * 1024,
-		RemotePublishers:   cCtx.Int("remote-publisher"),
+		StartPublisher:        cCtx.Int("start-publisher"),
+		EndPublisher:          cCtx.Int("end-publisher"),
+		StartRemoteRoomNumber: cCtx.Int("start-room-number"),
+		EndRemoteRoomNumber:   cCtx.Int("end-room-number"),
+		AudioPublishers:       cCtx.Int("audio-publishers"),
+		DataPublishers:        cCtx.Int("data-publishers"),
+		Subscribers:           cCtx.Int("subscribers"),
+		DataPacketByteSize:    cCtx.Int("data-packet-bytes"),
+		DataBitrate:           cCtx.Int("data-bitrate") * 1024,
+		RemotePublishers:      cCtx.Int("remote-publisher"),
 	}
 
 	test := loadtester.NewLoadTest(params)

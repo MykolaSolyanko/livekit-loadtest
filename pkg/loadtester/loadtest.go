@@ -22,13 +22,17 @@ type LoadTest struct {
 }
 
 type Params struct {
-	VideoPublishers int
-	AudioPublishers int
-	Subscribers     int
-	DataPublishers  int
-	VideoResolution string
-	VideoCodec      string
-	Duration        time.Duration
+	VideoPublishers       int
+	StartPublisher        int
+	EndPublisher          int
+	StartRemoteRoomNumber int
+	EndRemoteRoomNumber   int
+	AudioPublishers       int
+	Subscribers           int
+	DataPublishers        int
+	VideoResolution       string
+	VideoCodec            string
+	Duration              time.Duration
 	// number of seconds to spin up per second
 	NumPerSecond       float64
 	Simulcast          bool
@@ -58,12 +62,32 @@ func NewLoadTest(params Params) *LoadTest {
 		l.Params.NumPerSecond = 10
 	}
 
-	if l.Params.RemotePublishers == 0 && l.Params.VideoPublishers == 0 && l.Params.AudioPublishers == 0 {
-		l.Params.VideoPublishers = 1
-	}
-
 	if l.Params.DataPublishers > l.Params.Subscribers {
 		l.Params.DataPublishers = l.Params.Subscribers
+	}
+
+	if l.Params.StartPublisher < 0 {
+		l.Params.StartPublisher = 1
+	}
+
+	if l.Params.StartRemoteRoomNumber < 0 {
+		l.Params.StartRemoteRoomNumber = 1
+	}
+
+	if l.Params.StartPublisher == 0 && l.Params.EndPublisher > 0 {
+		l.Params.StartPublisher = 1
+	}
+
+	if l.Params.StartPublisher > 0 || l.Params.EndPublisher > 0 {
+		l.Params.VideoPublishers = l.Params.EndPublisher - l.Params.StartPublisher + 1
+	}
+
+	if l.Params.EndRemoteRoomNumber > 0 && l.Params.StartRemoteRoomNumber == 0 {
+		l.Params.StartRemoteRoomNumber = 1
+	}
+
+	if l.Params.StartRemoteRoomNumber > 0 || l.Params.EndRemoteRoomNumber > 0 {
+		l.Params.RemotePublishers = l.Params.EndRemoteRoomNumber - l.Params.StartRemoteRoomNumber + 1
 	}
 
 	if l.Params.DataPacketByteSize == 0 {
@@ -165,11 +189,16 @@ func (t *LoadTest) Run(ctx context.Context) error {
 	return nil
 }
 
-func (t *LoadTest) GetResolutions() []string {
+func (t *LoadTest) GetResolutions(isRemote bool) []string {
 	resolutions := strings.Split(t.Params.VideoResolution, " ")
 
-	if len(resolutions) < t.Params.VideoPublishers {
-		for i := len(resolutions); i < t.Params.VideoPublishers; i++ {
+	countPublishers := t.Params.VideoPublishers
+	if isRemote {
+		countPublishers = t.Params.RemotePublishers
+	}
+
+	if len(resolutions) < countPublishers {
+		for i := len(resolutions); i < countPublishers; i++ {
 			resolutions = append(resolutions, "1080p")
 		}
 	}
@@ -178,12 +207,29 @@ func (t *LoadTest) GetResolutions() []string {
 }
 
 func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[string]*testerStats, error) {
+	if params.Room == "" {
+		params.Room = "load-test"
+	}
+
 	params.IdentityPrefix = randStringRunes(5)
 
-	expectedTracks := params.VideoPublishers + params.AudioPublishers
+	if params.RemotePublishers == 0 && params.VideoPublishers == 0 {
+		return nil, fmt.Errorf("cannot have zero publishers")
+	}
+
+	if params.RemotePublishers < 0 || params.VideoPublishers < 0 {
+		return nil, fmt.Errorf("cannot have negative publishers")
+	}
 
 	if params.RemotePublishers > 0 && params.VideoPublishers > 0 {
 		return nil, fmt.Errorf("cannot have remote publishers and video publishers")
+	}
+
+	isRemote := params.RemotePublishers > 0
+
+	expectedTracks := params.VideoPublishers + params.AudioPublishers
+	if isRemote {
+		expectedTracks = params.RemotePublishers
 	}
 
 	var participantStrings []string
@@ -212,8 +258,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 	startedAt := time.Now()
 	numStarted := float64(0)
 	errs := syncmap.Map{}
-	resolutions := t.GetResolutions()
-	isRemote := params.RemotePublishers > 0
+	resolutions := t.GetResolutions(isRemote)
 
 	maxPublishers := params.VideoPublishers
 	if isRemote {
@@ -226,15 +271,21 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 
 	ready := make(chan struct{})
 
+	roomID := params.StartPublisher
+	if isRemote {
+		roomID = params.StartRemoteRoomNumber
+	}
+
 	for i := 0; i < maxPublishers; i++ {
-		room := fmt.Sprintf("%s_%d", params.Room, i)
+		room := fmt.Sprintf("%s_%d", params.Room, roomID)
+		roomID++
 		resolution := resolutions[i]
 
 		if !isRemote {
 			testerPubParams := params.TesterParams
 			testerPubParams.Sequence = i
 			testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
-			testerPubParams.name = fmt.Sprintf("Pub %d", i)
+			testerPubParams.name = fmt.Sprintf("Pub %d", roomID)
 			testerPubParams.Room = room
 			tester := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
 
