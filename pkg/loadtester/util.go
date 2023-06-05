@@ -22,20 +22,15 @@ func randStringRunes(n int) string {
 }
 
 func formatStrings(
-	packets, latency, latencyCount, dataChannelLatency, dataChannelLatencyCount, dropped int64,
-) (sLatency, sDataChannelLatency, sDropped string) {
+	packets, latency, latencyCount, dropped int64,
+) (sLatency, sDropped string) {
 	sLatency = " - "
-	sDataChannelLatency = " - "
 	sDropped = " - "
 
 	if packets > 0 {
 		totalPackets := packets + dropped
 		if latencyCount > 0 {
 			sLatency = fmt.Sprint(time.Duration(latency / latencyCount))
-		}
-
-		if dataChannelLatencyCount > 0 {
-			sDataChannelLatency = fmt.Sprint(time.Duration(dataChannelLatency / dataChannelLatencyCount))
 		}
 
 		sDropped = fmt.Sprintf("%d (%s%%)", dropped, formatPercentage(dropped, totalPackets))

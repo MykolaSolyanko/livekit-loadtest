@@ -3,6 +3,7 @@ package loadtester
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,12 +25,10 @@ type LoadTester struct {
 	room    *lksdk.Room
 	running atomic.Bool
 	// participant ID => quality
-	trackQualities    map[string]livekit.VideoQuality
-	quality           livekit.VideoQuality
-	dataPublishing    atomic.Bool
-	dataChannelLoaded atomic.Bool
-	stats             atomic.Value
-	// stats             *trackStats
+	trackQualities map[string]livekit.VideoQuality
+	quality        livekit.VideoQuality
+	dataPublishing atomic.Bool
+	stats          *sync.Map
 }
 
 type TesterParams struct {
@@ -39,6 +38,7 @@ type TesterParams struct {
 	Room           string
 	IdentityPrefix string
 	Resolution     string
+	SameRoom       bool
 	// true to subscribe to all published tracks
 	Subscribe bool
 
@@ -51,6 +51,7 @@ func NewLoadTester(params TesterParams, quality livekit.VideoQuality) *LoadTeste
 	return &LoadTester{
 		params:         params,
 		quality:        quality,
+		stats:          &sync.Map{},
 		trackQualities: make(map[string]livekit.VideoQuality),
 	}
 }
@@ -61,15 +62,20 @@ func (t *LoadTester) Start() error {
 	}
 
 	identity := fmt.Sprintf("%s_%d", t.params.IdentityPrefix, t.params.Sequence)
-	t.room = lksdk.CreateRoom(&lksdk.RoomCallback{
-		ParticipantCallback: lksdk.ParticipantCallback{
-			OnTrackSubscribed: t.onTrackSubscribed,
-			OnTrackSubscriptionFailed: func(sid string, rp *lksdk.RemoteParticipant) {
-				fmt.Printf("track subscription failed, lp:%v, sid:%v, rp:%v/%v\n", identity, sid, rp.Identity(), rp.SID())
-			},
-			OnTrackPublished: t.onTrackPublished,
-			OnDataReceived:   t.onDataReceived,
+	participantCallback := lksdk.ParticipantCallback{
+		OnTrackSubscribed: t.onTrackSubscribed,
+		OnTrackSubscriptionFailed: func(sid string, rp *lksdk.RemoteParticipant) {
+			fmt.Printf("track subscription failed, lp:%v, sid:%v, rp:%v/%v\n", identity, sid, rp.Identity(), rp.SID())
 		},
+	}
+
+	if !strings.HasPrefix(t.params.name, "Pub") {
+		participantCallback.OnDataReceived = t.onDataReceived
+		participantCallback.OnTrackPublished = t.onTrackPublished
+	}
+
+	t.room = lksdk.CreateRoom(&lksdk.RoomCallback{
+		ParticipantCallback: participantCallback,
 	})
 	var err error
 	// make up to 10 reconnect attempts
@@ -240,23 +246,28 @@ func (t *LoadTester) PublishSimulcastTrack(name, resolution, codec string) (stri
 func (t *LoadTester) getStats() *testerStats {
 	stats := &testerStats{
 		expectedTracks: t.params.expectedTracks,
-		trackStats:     t.stats.Load().(*trackStats),
+		stats:          make(map[string]*trackStats),
 	}
+
+	t.stats.Range(func(key, value interface{}) bool {
+		stats.stats[key.(string)] = value.(*trackStats)
+		return true
+	})
 
 	return stats
 }
 
 func (t *LoadTester) Reset() {
-	stats := t.stats.Load().(*trackStats)
-
-	var trackID string
-	if stats != nil {
-		trackID = stats.trackID
-	}
-
-	t.stats.Store(&trackStats{
-		trackID: trackID,
+	stats := sync.Map{}
+	t.stats.Range(func(key, value interface{}) bool {
+		old := value.(*trackStats)
+		stats.Store(key, &trackStats{
+			trackID: old.trackID,
+		})
+		return true
 	})
+
+	t.stats = &stats
 }
 
 func (t *LoadTester) Stop() {
@@ -272,39 +283,36 @@ func (t *LoadTester) onTrackPublished(publication *lksdk.RemoteTrackPublication,
 }
 
 func (t *LoadTester) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	value := t.stats.Load()
-	stats, ok := value.(*trackStats)
-	if !ok {
-		stats = &trackStats{
-			trackID: track.ID(),
-		}
-
-		t.stats.Store(stats)
+	if pub.Kind() != lksdk.TrackKindVideo {
+		return
 	}
 
-	stats.kind = pub.Kind()
+	s := &trackStats{
+		trackID: track.ID(),
+		kind:    TrackKindVideo,
+	}
+
+	t.stats.Store(track.ID(), s)
 
 	fmt.Println("subscribed to track", t.room.LocalParticipant.Identity(), pub.SID(), pub.Kind())
 
 	go t.consumeTrack(track, pub, rp)
 
-	if pub.Kind() != lksdk.TrackKindVideo {
-		return
-	}
+	if !t.params.SameRoom {
+		resolutions := provider2.GetVideoResolution(t.params.Resolution)
+		if resolutions == nil || len(resolutions) != 3 {
+			fmt.Printf("invalid resolution %s\n", t.params.Resolution)
+			return
+		}
 
-	resolutions := provider2.GetVideoResolution(t.params.Resolution)
-	if resolutions == nil || len(resolutions) != 3 {
-		fmt.Printf("invalid resolution %s\n", t.params.Resolution)
-		return
-	}
-
-	switch t.quality {
-	case livekit.VideoQuality_HIGH:
-		pub.SetVideoDimensions(uint32(resolutions[0].Width), uint32(resolutions[0].Height))
-	case livekit.VideoQuality_MEDIUM:
-		pub.SetVideoDimensions(uint32(resolutions[1].Width), uint32(resolutions[1].Height))
-	case livekit.VideoQuality_LOW:
-		pub.SetVideoDimensions(uint32(resolutions[2].Width), uint32(resolutions[2].Height))
+		switch t.quality {
+		case livekit.VideoQuality_HIGH:
+			pub.SetVideoDimensions(uint32(resolutions[0].Width), uint32(resolutions[0].Height))
+		case livekit.VideoQuality_MEDIUM:
+			pub.SetVideoDimensions(uint32(resolutions[1].Width), uint32(resolutions[1].Height))
+		case livekit.VideoQuality_LOW:
+			pub.SetVideoDimensions(uint32(resolutions[2].Width), uint32(resolutions[2].Height))
+		}
 	}
 }
 
@@ -326,12 +334,13 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 		dpkt = &codecs.OpusPacket{}
 	}
 
-	value := t.stats.Load()
-	stats, ok := value.(*trackStats)
+	value, ok := t.stats.Load(track.ID())
 	if !ok {
 		fmt.Println("invalid stats")
 		return
 	}
+
+	stats := value.(*trackStats)
 
 	sb := samplebuilder.New(100, dpkt, track.Codec().ClockRate, samplebuilder.WithPacketDroppedHandler(func() {
 		stats.dropped.Inc()
@@ -377,32 +386,31 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 }
 
 func (t *LoadTester) onDataReceived(data []byte, rp *lksdk.RemoteParticipant) {
-	value := t.stats.Load()
-	stats, ok := value.(*trackStats)
+	var s *trackStats
+
+	value, ok := t.stats.Load(rp.SID())
 	if !ok {
-		stats = &trackStats{
+		s = &trackStats{
 			trackID: rp.SID(),
+			kind:    TrackKindData,
 		}
 
-		t.stats.Store(stats)
+		s.startedAt.Store(time.Now())
+		t.stats.Store(rp.SID(), s)
+	} else {
+		s = value.(*trackStats)
 	}
 
-	load := t.dataChannelLoaded.Load()
-	if !load {
-		t.dataChannelLoaded.Store(true)
-		stats.dataChannelStartedAt.Store(time.Now())
-	}
-
-	stats.dataChannelBytes.Add(int64(len(data)))
-	stats.dataChannelPackets.Inc()
+	s.bytes.Add(int64(len(data)))
+	s.packets.Inc()
 	if len(data) > 8 {
 		// Extract the timestamp from the data
 		sentAt := int64(binary.LittleEndian.Uint64(data[len(data)-8:]))
 
 		// Calculate the latency
 		latency := time.Now().UnixNano() - sentAt
-		stats.dataChannelLatency.Add(latency)
-		stats.dataChannelLatencyCount.Inc()
+		s.latency.Add(latency)
+		s.latencyCount.Inc()
 	}
 }
 

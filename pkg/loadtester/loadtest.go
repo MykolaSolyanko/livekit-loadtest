@@ -36,6 +36,7 @@ type Params struct {
 	// number of seconds to spin up per second
 	NumPerSecond       float64
 	Simulcast          bool
+	SameRoom           bool
 	SimulateSpeakers   bool
 	RemotePublishers   int
 	HighQualityViewer  int
@@ -113,34 +114,31 @@ func (t *LoadTest) Run(ctx context.Context) error {
 		return nil
 	}
 
-	summaries := make(map[string]map[string]*summary)
+	summaries := make(map[string]map[string][]*summary)
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 	for room, roomStats := range stats {
 		fmt.Fprintf(w, "\nStatistics for room %s\n", room)
 
-		summaries[room] = make(map[string]*summary)
+		summaries[room] = make(map[string][]*summary)
 		for subName, testerStats := range roomStats {
-			summaries[room][subName] = getTesterSummary(testerStats)
-
-			if testerStats.trackStats == nil {
+			if len(testerStats.stats) == 0 {
 				continue
 			}
 
-			_, _ = fmt.Fprintf(w, "\n%s\t| Track\t| Kind\t| Pkts\t| Bitrate\t| Latency\t| Dropped\t| Data Pkts\t| Data Bitrate\t| Latency\n", subName)
+			summaries[room][subName] = getTesterSummary(testerStats)
 
-			latency, dataChannelLatency, dropped := formatStrings(
-				testerStats.trackStats.packets.Load(), testerStats.trackStats.latency.Load(),
-				testerStats.trackStats.latencyCount.Load(), testerStats.trackStats.dataChannelLatency.Load(),
-				testerStats.trackStats.dataChannelLatencyCount.Load(), testerStats.trackStats.dropped.Load())
+			_, _ = fmt.Fprintf(w, "\n%s\t| Track\t| Kind\t| Pkts\t| Bitrate\t| Latency\t| Dropped\n", subName)
+			for _, stat := range testerStats.stats {
 
-			trackName := t.trackNames[testerStats.trackStats.trackID]
+				latency, dropped := formatStrings(
+					stat.packets.Load(), stat.latency.Load(),
+					stat.latencyCount.Load(), stat.dropped.Load())
 
-			_, _ = fmt.Fprintf(w, "\t| %s %s\t| %s\t| %d\t| %s\t| %s\t| %s\t| %d\t| %s\t| %s\n",
-				trackName, testerStats.trackStats.trackID, testerStats.trackStats.kind, testerStats.trackStats.packets.Load(),
-				formatBitrate(testerStats.trackStats.bytes.Load(), time.Since(testerStats.trackStats.startedAt.Load())), latency, dropped,
-				testerStats.trackStats.dataChannelPackets.Load(),
-				formatBitrate(testerStats.trackStats.dataChannelBytes.Load(), time.Since(testerStats.trackStats.dataChannelStartedAt.Load())), dataChannelLatency)
+				_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %d\t| %s\t| %s\t| %s\n",
+					stat.trackID, stat.kind, stat.packets.Load(),
+					formatBitrate(stat.bytes.Load(), time.Since(stat.startedAt.Load())), latency, dropped)
 
+			}
 			_ = w.Flush()
 		}
 	}
@@ -153,39 +151,43 @@ func (t *LoadTest) Run(ctx context.Context) error {
 	for name, subSummary := range summaries {
 		w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 		fmt.Fprintf(w, "\nSummary for room %s\n", name)
-		_, _ = fmt.Fprint(w, "\nSummary\t| Tester\t| Bitrate\t| Latency\t| Total Dropped\t| Data Bitrate\t| Latency\t| Error\n")
+		_, _ = fmt.Fprint(w, "\nSummary\t| Tester\t| Kind\t| Tracks\t| Bitrate\t| Latency\t| Total Dropped\t| Error\n")
 
 		for subName, summary := range subSummary {
-			sLatency, sDataChannelLatency, sDropped := formatStrings(
-				summary.packets, summary.latency, summary.latencyCount, summary.dataChannelLatency,
-				summary.dataChannelLatencyCount, summary.dropped)
+			for _, s := range summary {
+				if s == nil {
+					continue
+				}
 
-			sBitrate := formatBitrate(summary.bytes, summary.elapsed)
-			sChannelBitrate := formatBitrate(summary.channelBytes, summary.channelElapsed)
-			_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %s\t| %s\t| %s\t| %s\t| %s\n",
-				subName, sBitrate, sLatency, sDropped, sChannelBitrate, sDataChannelLatency, summary.errString)
+				sLatency, sDropped := formatStrings(
+					s.packets, s.latency, s.latencyCount, s.dropped)
+
+				sBitrate := formatBitrate(s.bytes, s.elapsed)
+
+				_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %d\t| %s\t| %s\t| %s\t| %s\n",
+					subName, s.kind, s.tracks, sBitrate, sLatency, sDropped, s.errString)
+			}
 		}
 
 		s := getTestSummary(subSummary)
-		sLatency, sDataChannelLatency, sDropped := formatStrings(
-			s.packets, s.latency, s.latencyCount, s.dataChannelLatency, s.dataChannelLatencyCount, s.dropped)
-		// avg bitrate per sub
-		sBitrate := fmt.Sprintf("%s (%s avg)",
-			formatBitrate(s.bytes, s.elapsed),
-			formatBitrate(s.bytes/int64(len(summaries)), s.elapsed),
-		)
-		// avg data channel bitrate per sub
-		sChannelBitrate := fmt.Sprintf("%s (%s avg)",
-			formatBitrate(s.channelBytes, s.channelElapsed),
-			formatBitrate(s.channelBytes/int64(len(summaries)), s.channelElapsed),
-		)
-		_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %s\t| %s\t| %s\t| %s\t| %d\n",
-			"Total", sBitrate, sLatency, sDropped, sChannelBitrate, sDataChannelLatency, s.errCount)
+		for _, stat := range s {
+			sLatency, sDropped := formatStrings(
+				stat.packets, stat.latency, stat.latencyCount, stat.dropped)
+			// avg bitrate per sub
+			sBitrate := fmt.Sprintf("%s (%s avg)",
+				formatBitrate(stat.bytes, stat.elapsed),
+				formatBitrate(stat.bytes/int64(stat.tracks), stat.elapsed),
+			)
+
+			_, _ = fmt.Fprintf(w, "\t| %s\t| %s\t| %d\t| %s\t| %s\t| %s\t| %d\n",
+				"Total", stat.kind, stat.tracks, sBitrate, sLatency, sDropped, stat.errCount)
+		}
 
 		_ = w.Flush()
 	}
 
 	_ = w.Flush()
+
 	return nil
 }
 
@@ -276,8 +278,15 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		roomID = params.StartRemoteRoomNumber
 	}
 
+	var room string
+
 	for i := 0; i < maxPublishers; i++ {
-		room := fmt.Sprintf("%s_%d", params.Room, roomID)
+		if params.SameRoom {
+			room = params.Room
+		} else {
+			room = fmt.Sprintf("%s_%d", params.Room, roomID)
+		}
+
 		roomID++
 		resolution := resolutions[i]
 
@@ -287,6 +296,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 			testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
 			testerPubParams.name = fmt.Sprintf("Pub %d", roomID)
 			testerPubParams.Room = room
+			testerPubParams.SameRoom = params.SameRoom
 			tester := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
 
 			publishers = append(publishers, tester)
@@ -318,6 +328,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 			numStarted++
 		}
 
+		if params.SameRoom && len(testers) > 0 {
+			continue
+		}
+
 		high := params.HighQualityViewer
 		medium := params.MediumQualityView
 		low := params.LowQualityViewer
@@ -330,6 +344,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 			testerSubParams.expectedTracks = expectedTracks
 			testerSubParams.Subscribe = true
 			testerSubParams.Resolution = resolution
+			testerSubParams.SameRoom = params.SameRoom
 			testerSubParams.IdentityPrefix += fmt.Sprintf("_sub%s", room)
 			testerSubParams.Room = room
 			testerSubParams.name = fmt.Sprintf("Sub %d in %s", j, room)

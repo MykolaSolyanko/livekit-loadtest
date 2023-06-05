@@ -124,6 +124,11 @@ var LoadTestCommands = []*cli.Command{
 				Usage:  "runs set list of load test cases",
 				Hidden: true,
 			},
+			&cli.BoolFlag{
+				Name:   "same-room",
+				Usage:  "publishers and subscribers are in the same room",
+				Hidden: false,
+			},
 		),
 	},
 }
@@ -153,6 +158,7 @@ func loadTest(cCtx *cli.Context) error {
 		Duration:          cCtx.Duration("duration"),
 		NumPerSecond:      cCtx.Float64("num-per-second"),
 		Simulcast:         !cCtx.Bool("no-simulcast"),
+		SameRoom:          cCtx.Bool("same-room"),
 		SimulateSpeakers:  cCtx.Bool("simulate-speakers"),
 		HighQualityViewer: cCtx.Int("high"),
 		MediumQualityView: cCtx.Int("medium"),
