@@ -102,7 +102,6 @@ var (
 
 	videoSpecs  []videoSpecParam
 	videoIndex  atomic.Int64
-	audioNames  []string
 	audioIndex  atomic.Int64
 	resolutions map[string][]Ratio
 )
@@ -145,15 +144,6 @@ func init() {
 		prepareVideoSpecs("butterfly", "720p", h264Codec, 1800, 720, 460),
 		prepareVideoSpecs("butterfly", "1080p", h264Codec, 4100, 720, 460),
 		prepareVideoSpecs("butterfly", "1440p", h264Codec, 7300, 4800, 1200),
-	}
-	audioNames = []string{
-		"change-amelia",
-		"change-benjamin",
-		"change-elena",
-		"change-clint",
-		"change-emma",
-		"change-ken",
-		"change-sophie",
 	}
 }
 
@@ -211,12 +201,11 @@ func CreateVideoLoopers(resolution string, codecFilter string, simulcast bool) (
 }
 
 func CreateAudioLooper() (*OpusAudioLooper, error) {
-	chosenName := audioNames[int(audioIndex.Load())%len(audioNames)]
-	audioIndex.Inc()
-	f, err := res.Open(fmt.Sprintf("resources/%s.ogg", chosenName))
+	f, err := res.Open("resources/change-ken.ogg")
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
 	return NewOpusAudioLooper(f)
 }

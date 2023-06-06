@@ -16,9 +16,8 @@ import (
 )
 
 type LoadTest struct {
-	Params     Params
-	trackNames map[string]string
-	lock       sync.Mutex
+	Params Params
+	lock   sync.Mutex
 }
 
 type Params struct {
@@ -27,7 +26,6 @@ type Params struct {
 	EndPublisher          int
 	StartRemoteRoomNumber int
 	EndRemoteRoomNumber   int
-	AudioPublishers       int
 	Subscribers           int
 	DataPublishers        int
 	VideoResolution       string
@@ -38,6 +36,7 @@ type Params struct {
 	Simulcast          bool
 	SameRoom           bool
 	SimulateSpeakers   bool
+	WithAudio          bool
 	RemotePublishers   int
 	HighQualityViewer  int
 	MediumQualityView  int
@@ -50,8 +49,7 @@ type Params struct {
 
 func NewLoadTest(params Params) *LoadTest {
 	l := &LoadTest{
-		Params:     params,
-		trackNames: make(map[string]string),
+		Params: params,
 	}
 
 	if l.Params.NumPerSecond == 0 {
@@ -125,7 +123,7 @@ func (t *LoadTest) Run(ctx context.Context) error {
 				continue
 			}
 
-			summaries[room][subName] = getTesterSummary(testerStats)
+			summaries[room][subName] = getTesterSummary(testerStats, t.Params.DataPublishers > 0, t.Params.WithAudio)
 
 			_, _ = fmt.Fprintf(w, "\n%s\t| Track\t| Kind\t| Pkts\t| Bitrate\t| Latency\t| Dropped\n", subName)
 			for _, stat := range testerStats.stats {
@@ -169,7 +167,7 @@ func (t *LoadTest) Run(ctx context.Context) error {
 			}
 		}
 
-		s := getTestSummary(subSummary)
+		s := getTestSummary(subSummary, t.Params.DataPublishers > 0, t.Params.WithAudio)
 		for _, stat := range s {
 			sLatency, sDropped := formatStrings(
 				stat.packets, stat.latency, stat.latencyCount, stat.dropped)
@@ -229,7 +227,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 
 	isRemote := params.RemotePublishers > 0
 
-	expectedTracks := params.VideoPublishers + params.AudioPublishers
+	expectedTracks := params.VideoPublishers
 	if isRemote {
 		expectedTracks = params.RemotePublishers
 	}
@@ -238,9 +236,7 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 	if params.VideoPublishers > 0 {
 		participantStrings = append(participantStrings, fmt.Sprintf("%d video publishers", params.VideoPublishers))
 	}
-	if params.AudioPublishers > 0 {
-		participantStrings = append(participantStrings, fmt.Sprintf("%d audio publishers", params.AudioPublishers))
-	}
+
 	if params.Subscribers > 0 {
 		participantStrings = append(participantStrings, fmt.Sprintf("%d subscribers", params.Subscribers*expectedTracks))
 	}
@@ -291,38 +287,19 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		resolution := resolutions[i]
 
 		if !isRemote {
-			testerPubParams := params.TesterParams
-			testerPubParams.Sequence = i
-			testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
-			testerPubParams.name = fmt.Sprintf("Pub %d", roomID)
-			testerPubParams.Room = room
-			testerPubParams.SameRoom = params.SameRoom
-			tester := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
+			testerPubParams := prepareTesterPubParams(params, i, room, roomID)
+			testerVideo := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
 
-			publishers = append(publishers, tester)
+			publishers = append(publishers, testerVideo)
 
 			group.Go(func() error {
-				if err := tester.Start(); err != nil {
-					fmt.Println(errors.Wrapf(err, "could not connect %s", testerPubParams.name))
-					errs.Store(testerPubParams.name, err)
-					return nil
-				}
-
-				var video string
-				var err error
-				if params.Simulcast {
-					video, err = tester.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
-				} else {
-					video, err = tester.PublishVideoTrack("video", resolution, params.VideoCodec)
-				}
+				err := startPublishing(params, testerVideo, resolution)
 				if err != nil {
+					fmt.Println(errors.Wrapf(err, "could not publish %s", testerPubParams.name))
 					errs.Store(testerPubParams.name, err)
+
 					return nil
 				}
-				t.lock.Lock()
-				t.trackNames[video] = fmt.Sprintf("%dV", testerPubParams.Sequence)
-				t.lock.Unlock()
-
 				return nil
 			})
 			numStarted++
@@ -452,6 +429,55 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 	}
 
 	return stats, nil
+}
+
+func startPublishing(params Params, tester *LoadTester, resolution string) error {
+	if err := tester.Start(); err != nil {
+		return err
+	}
+
+	var err error
+	if params.Simulcast {
+		_, err = tester.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
+	} else {
+		_, err = tester.PublishVideoTrack("video", resolution, params.VideoCodec)
+	}
+	if err != nil {
+		return err
+	}
+
+	if params.WithAudio {
+		_, err = tester.PublishAudioTrack("audio")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func startAudioPublishing(params Params, tester *LoadTester) error {
+	if err := tester.Start(); err != nil {
+		return err
+	}
+
+	_, err := tester.PublishAudioTrack("audio")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func prepareTesterPubParams(params Params, seqNumber int, room string, roomID int) TesterParams {
+	testerPubParams := params.TesterParams
+	testerPubParams.Sequence = seqNumber
+	testerPubParams.IdentityPrefix += fmt.Sprintf("_pub%s", room)
+	testerPubParams.name = fmt.Sprintf("Pub %d", roomID)
+	testerPubParams.Room = room
+	testerPubParams.SameRoom = params.SameRoom
+
+	return testerPubParams
 }
 
 func splitVideoQualityViewers(high, medium, low *int, subscribers int, simulcasting bool) {

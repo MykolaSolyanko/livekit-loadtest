@@ -51,10 +51,6 @@ var LoadTestCommands = []*cli.Command{
 				Usage:   "end a room with the given number",
 			},
 			&cli.IntFlag{
-				Name:  "audio-publishers",
-				Usage: "number of participants that would publish audio tracks",
-			},
-			&cli.IntFlag{
 				Name:  "data-publishers",
 				Usage: "number of participants that would publish data packets",
 			},
@@ -129,6 +125,11 @@ var LoadTestCommands = []*cli.Command{
 				Usage:  "publishers and subscribers are in the same room",
 				Hidden: false,
 			},
+			&cli.BoolFlag{
+				Name:   "with-audio",
+				Usage:  "publishers and subscribers are in the same room",
+				Hidden: false,
+			},
 		),
 	},
 }
@@ -159,6 +160,7 @@ func loadTest(cCtx *cli.Context) error {
 		NumPerSecond:      cCtx.Float64("num-per-second"),
 		Simulcast:         !cCtx.Bool("no-simulcast"),
 		SameRoom:          cCtx.Bool("same-room"),
+		WithAudio:         cCtx.Bool("with-audio"),
 		SimulateSpeakers:  cCtx.Bool("simulate-speakers"),
 		HighQualityViewer: cCtx.Int("high"),
 		MediumQualityView: cCtx.Int("medium"),
@@ -174,7 +176,6 @@ func loadTest(cCtx *cli.Context) error {
 		EndPublisher:          cCtx.Int("end-publisher"),
 		StartRemoteRoomNumber: cCtx.Int("start-room-number"),
 		EndRemoteRoomNumber:   cCtx.Int("end-room-number"),
-		AudioPublishers:       cCtx.Int("audio-publishers"),
 		DataPublishers:        cCtx.Int("data-publishers"),
 		Subscribers:           cCtx.Int("subscribers"),
 		DataPacketByteSize:    cCtx.Int("data-packet-bytes"),

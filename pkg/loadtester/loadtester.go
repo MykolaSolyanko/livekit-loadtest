@@ -283,13 +283,9 @@ func (t *LoadTester) onTrackPublished(publication *lksdk.RemoteTrackPublication,
 }
 
 func (t *LoadTester) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-	if pub.Kind() != lksdk.TrackKindVideo {
-		return
-	}
-
 	s := &trackStats{
 		trackID: track.ID(),
-		kind:    TrackKindVideo,
+		kind:    TrackKind(pub.Kind()),
 	}
 
 	t.stats.Store(track.ID(), s)
@@ -298,7 +294,7 @@ func (t *LoadTester) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Rem
 
 	go t.consumeTrack(track, pub, rp)
 
-	if !t.params.SameRoom {
+	if !t.params.SameRoom && s.kind == TrackKindVideo {
 		resolutions := provider2.GetVideoResolution(t.params.Resolution)
 		if resolutions == nil || len(resolutions) != 3 {
 			fmt.Printf("invalid resolution %s\n", t.params.Resolution)
@@ -364,7 +360,7 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 			stats.bytes.Add(int64(len(pkt.Payload)))
 			stats.packets.Inc()
 
-			if pub.Kind() == lksdk.TrackKindVideo && len(pkt.Payload) > 8 {
+			if len(pkt.Payload) > 8 {
 				sentAt := int64(binary.LittleEndian.Uint64(pkt.Payload[len(pkt.Payload)-8:]))
 				latency := time.Now().UnixNano() - sentAt
 				sentTime := time.Unix(0, sentAt)

@@ -8,9 +8,8 @@ import (
 
 type testerStats struct {
 	expectedTracks int
-	// trackStats     *trackStats
-	stats map[string]*trackStats
-	err   error
+	stats          map[string]*trackStats
+	err            error
 }
 
 type TrackKind string
@@ -49,11 +48,20 @@ func (k TrackKind) String() string {
 	return string(k)
 }
 
-func getTestSummary(summaries map[string][]*summary) []*summary {
-	return []*summary{
+func getTestSummary(summaries map[string][]*summary, data, audio bool) []*summary {
+	sumTotal := []*summary{
 		getTestTotalSummary(summaries, TrackKindVideo),
-		getTestTotalSummary(summaries, TrackKindData),
 	}
+
+	if data {
+		sumTotal = append(sumTotal, getTestTotalSummary(summaries, TrackKindData))
+	}
+
+	if audio {
+		sumTotal = append(sumTotal, getTestTotalSummary(summaries, TrackKindAudio))
+	}
+
+	return sumTotal
 }
 
 func getTestTotalSummary(summaries map[string][]*summary, kind TrackKind) *summary {
@@ -82,11 +90,20 @@ func getTestTotalSummary(summaries map[string][]*summary, kind TrackKind) *summa
 	return s
 }
 
-func getTesterSummary(testerStats *testerStats) []*summary {
-	return []*summary{
+func getTesterSummary(testerStats *testerStats, data, audio bool) []*summary {
+	summaries := []*summary{
 		getTesterTracksSummary(testerStats, TrackKindVideo),
-		getTesterTracksSummary(testerStats, TrackKindData),
 	}
+
+	if data {
+		summaries = append(summaries, getTesterTracksSummary(testerStats, TrackKindData))
+	}
+
+	if audio {
+		summaries = append(summaries, getTesterTracksSummary(testerStats, TrackKindAudio))
+	}
+
+	return summaries
 }
 
 func getTesterTracksSummary(testerStats *testerStats, kind TrackKind) *summary {

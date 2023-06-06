@@ -2,6 +2,7 @@ package provider
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"time"
 
@@ -67,6 +68,11 @@ func (l *OpusAudioLooper) nextSample(rewindEOF bool) (media.Sample, error) {
 	}
 	sampleCount := float64(pageHeader.GranulePosition - l.lastGranule)
 	l.lastGranule = pageHeader.GranulePosition
+
+	// add timestamp to pageData
+	ts := make([]byte, 8)
+	binary.LittleEndian.PutUint64(ts, uint64(time.Now().UnixNano()))
+	pageData = append(pageData, ts...)
 
 	sample.Data = pageData
 	sample.Duration = time.Duration((sampleCount/48000)*1000) * time.Millisecond
