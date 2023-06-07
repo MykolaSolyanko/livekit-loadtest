@@ -97,6 +97,8 @@ go build -o bin/livekit-cli ./cmd/livekit-cli
 - `high`, `medium`, `low`: If the `no-simulcast` option is not selected, it specifies the resolution at which the subscriber will consume the video. These parameters depend on the `subscribers` parameter. With the `high` option, we specify how many subscribers will consume the video in high resolution, etc.
 - `data-publishers`: Specifies the number of publishers for the data channel.
 - `data-packet-bytes`, `data-bitrate`: These parameters specify the size of the data packet and how many of these packets will be sent per second.
+- `with-audio`: Indicates that the publisher will stream with audio.
+- `same-room`: Indicates that the all publishers and subscribers will be in the same room.
 
 Currently, the following resolution formats are supported: 1440p, 1080p, 720p, 360p. We support the following resolution table with bitrate for these formats:
 
@@ -131,122 +133,126 @@ export LIVEKIT_API_SECRET=
 
 ### Launch Examples:
 
-#### 1. Launch with a single publisher in 1080p resolution and two subscribers with a 1-minute stream interval without simulcasting:
+#### 1. Launch with a single publisher in 1080p resolution and two subscribers with a 1-minute stream interval without simulcasting in room with prefix `VM1`:
 ```shell
-./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --video-publishers 1 --subscribers 2
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1   --start-publisher 1  --end-publisher 1 --subscribers 2
 
-Statistics for room load-test_0
+Statistics for room VM1_1
 
-Sub 0 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCZk3mpLDYZ6QG | video | 26245 | 4.1mbps | 38.245066ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 0 in VM1_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VC5kYBccKKTiyr | video | 26593 | 4.1mbps | 7.284755ms | 0 (0%)
 
-Sub 1 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCZk3mpLDYZ6QG | video | 26245 | 4.1mbps | 38.181305ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 1 in VM1_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VC5kYBccKKTiyr | video | 26593 | 4.1mbps | 7.288989ms | 0 (0%)
 
-Summary for room load-test_0
+Summary for room VM1_1
 
-Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 0 in load-test_0 | 4.1mbps               | 38.245066ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 1 in load-test_0 | 4.1mbps               | 38.181305ms | 0 (0%)        | 0bps            |  -      | -
-        | Total                | 8.3mbps (8.3mbps avg) | 38.213186ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Summary | Tester         | Kind  | Tracks | Bitrate               | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_1 | video | 1      | 4.1mbps               | 7.284755ms | 0 (0%)        | -
+        | Sub 1 in VM1_1 | video | 1      | 4.1mbps               | 7.288989ms | 0 (0%)        | -
+        | Total          | video | 2      | 8.3mbps (4.1mbps avg) | 7.286872ms | 0 (0%)        | 0
 ```
 
-#### 2. Launch with two publishers in 1080p and 720p resolutions and two subscribers for each publisher with a 1-minute stream interval without simulcasting:
+#### 2. Launch with two publishers in 1080p and 720p resolutions and two subscribers for each publisher with a 1-minute stream interval without simulcasting in room with prefix `VM1`:
 ```shell
-./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p 720p" --no-simulcast --video-publishers 2 --subscribers 2
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1   --start-publisher 1  --end-publisher 2 --subscribers 2
 
-Statistics for room load-test_0
+Statistics for room VM1_1
 
-Sub 1 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCmzea9vSy82Zr | video | 26533 | 4.1mbps | 37.175218ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 0 in VM1_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCJeWm4HeybYY3 | video | 27115 | 4.1mbps | 6.172919ms | 0 (0%)
 
-Sub 0 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCmzea9vSy82Zr | video | 26533 | 4.1mbps | 37.955722ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 1 in VM1_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCJeWm4HeybYY3 | video | 27115 | 4.1mbps | 6.184611ms | 0 (0%)
 
-Statistics for room load-test_1
+Statistics for room VM1_2
 
-Sub 0 in load-test_1 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 1V TR_VCM6fYqsEJSxE6 | video | 11530 | 1.7mbps | 38.003357ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 0 in VM1_2 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCBXTX9fgKSkmm | video | 27132 | 4.1mbps | 8.388166ms | 0 (0%)
 
-Sub 1 in load-test_1 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 1V TR_VCM6fYqsEJSxE6 | video | 11530 | 1.7mbps | 37.166911ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 1 in VM1_2 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCBXTX9fgKSkmm | video | 27132 | 4.1mbps | 8.385111ms | 0 (0%)
 
-Summary for room load-test_0
+Summary for room VM1_2
 
-Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 1 in load-test_0 | 4.1mbps               | 37.175218ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 0 in load-test_0 | 4.1mbps               | 37.955722ms | 0 (0%)        | 0bps            |  -      | -
-        | Total                | 8.3mbps (4.1mbps avg) | 37.56547ms  | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Summary | Tester         | Kind  | Tracks | Bitrate               | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_2 | video | 1      | 4.1mbps               | 8.388166ms | 0 (0%)        | -
+        | Sub 1 in VM1_2 | video | 1      | 4.1mbps               | 8.385111ms | 0 (0%)        | -
+        | Total          | video | 2      | 8.3mbps (4.1mbps avg) | 8.386639ms | 0 (0%)        | 0
 
-Summary for room load-test_1
+Summary for room VM1_1
 
-Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 0 in load-test_1 | 1.7mbps               | 38.003357ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 1 in load-test_1 | 1.7mbps               | 37.166911ms | 0 (0%)        | 0bps            |  -      | -
-        | Total                | 3.5mbps (1.7mbps avg) | 37.585134ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Summary | Tester         | Kind  | Tracks | Bitrate               | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_1 | video | 1      | 4.1mbps               | 6.172919ms | 0 (0%)        | -
+        | Sub 1 in VM1_1 | video | 1      | 4.1mbps               | 6.184611ms | 0 (0%)        | -
+        | Total          | video | 2      | 8.3mbps (4.1mbps avg) | 6.178765ms | 0 (0%)        | 0
 ```
 
 #### 3. Launch with two publishers in 1080p and 720p resolutions and three subscribers for each publisher with a 1-minute stream interval with simulcast, where the first subscriber uses high resolution, the second in medium, and the third in low:
 ```shell
-./livekit-cli load-test --duration 1m --video-codec h264 --high=1 --medium=1 --low=1 --video-resolution "1080p 720p" --video-publishers 2 --subscribers 3
-
-Statistics for room load-test_0
-
-Sub 0 in load-test_0 | Track                | Kind  | Pkts  | Bitrate | Latency    | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCmLbkoPbcotGd | video | 26538 | 4.1mbps | 37.33238ms | 0 (0%)  | 0         | 0bps         |  -
-
-Sub 1 in load-test_0 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCmLbkoPbcotGd | video | 5757 | 795.0kbps | 36.941458ms | 0 (0%)  | 0         | 0bps         |  -
-
-Sub 2 in load-test_0 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 0V TR_VCmLbkoPbcotGd | video | 4026 | 531.8kbps | 37.663974ms | 0 (0%)  | 0         | 0bps         |  -
-
+./livekit-cli load-test --duration 1m --video-codec h264 --high=1 --medium=1 --low=1 --video-resolution "1080p 720p" --start-publisher 1  --end-publisher 2 --subscribers 3
 Statistics for room load-test_1
 
-Sub 0 in load-test_1 | Track                | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 1V TR_VCYwqCPtbGmNxh | video | 11542 | 1.7mbps | 38.059655ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 0 in load-test_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+                     | TR_VCPT3wHs6sAWvB | video | 27115 | 4.1mbps | 6.908075ms | 0 (0%)
 
-Sub 1 in load-test_1 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 1V TR_VCYwqCPtbGmNxh | video | 5434 | 741.8kbps | 38.849474ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 1 in load-test_1 | Track             | Kind  | Pkts | Bitrate   | Latency    | Dropped
+                     | TR_VCPT3wHs6sAWvB | video | 5864 | 792.4kbps | 6.832594ms | 0 (0%)
 
-Sub 2 in load-test_1 | Track                | Kind  | Pkts | Bitrate   | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     | 1V TR_VCYwqCPtbGmNxh | video | 3696 | 478.2kbps | 37.955024ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 2 in load-test_1 | Track             | Kind  | Pkts | Bitrate   | Latency    | Dropped
+                     | TR_VCPT3wHs6sAWvB | video | 4095 | 529.3kbps | 6.784838ms | 0 (0%)
 
-Summary for room load-test_0
+Statistics for room load-test_2
 
-Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 0 in load-test_0 | 4.1mbps               | 37.33238ms  | 0 (0%)        | 0bps            |  -      | -
-        | Sub 1 in load-test_0 | 795.0kbps             | 36.941458ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 2 in load-test_0 | 531.8kbps             | 37.663974ms | 0 (0%)        | 0bps            |  -      | -
-        | Total                | 5.5mbps (2.7mbps avg) | 37.31622ms  | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Sub 0 in load-test_2 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+                     | TR_VCXFqLsFZUAEGN | video | 11748 | 1.7mbps | 6.699061ms | 0 (0%)
+
+Sub 1 in load-test_2 | Track             | Kind  | Pkts | Bitrate   | Latency   | Dropped
+                     | TR_VCXFqLsFZUAEGN | video | 5518 | 740.6kbps | 6.70892ms | 0 (0%)
+
+Sub 2 in load-test_2 | Track             | Kind  | Pkts | Bitrate   | Latency    | Dropped
+                     | TR_VCXFqLsFZUAEGN | video | 3755 | 477.6kbps | 6.655672ms | 0 (0%)
 
 Summary for room load-test_1
 
-Summary | Tester               | Bitrate               | Latency     | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 0 in load-test_1 | 1.7mbps               | 38.059655ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 1 in load-test_1 | 741.8kbps             | 38.849474ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 2 in load-test_1 | 478.2kbps             | 37.955024ms | 0 (0%)        | 0bps            |  -      | -
-        | Total                | 3.0mbps (1.5mbps avg) | 38.282338ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Summary | Tester               | Kind  | Tracks | Bitrate               | Latency    | Total Dropped | Error
+        | Sub 0 in load-test_1 | video | 1      | 4.1mbps               | 6.908075ms | 0 (0%)        | -
+        | Sub 1 in load-test_1 | video | 1      | 792.4kbps             | 6.832594ms | 0 (0%)        | -
+        | Sub 2 in load-test_1 | video | 1      | 529.3kbps             | 6.784838ms | 0 (0%)        | -
+        | Total                | video | 3      | 5.5mbps (1.8mbps avg) | 6.841247ms | 0 (0%)        | 0
+
+Summary for room load-test_2
+
+Summary | Tester               | Kind  | Tracks | Bitrate                 | Latency    | Total Dropped | Error
+        | Sub 0 in load-test_2 | video | 1      | 1.7mbps                 | 6.699061ms | 0 (0%)        | -
+        | Sub 1 in load-test_2 | video | 1      | 740.6kbps               | 6.70892ms  | 0 (0%)        | -
+        | Sub 2 in load-test_2 | video | 1      | 477.6kbps               | 6.655672ms | 0 (0%)        | -
+        | Total                | video | 3      | 3.0mbps (987.5kbps avg) | 6.687669ms | 0 (0%)        | 0
 ```
 
 #### 4. Launch with a single publisher in 1440p resolution, with two data publishers and two subscribers for each publisher with a 1-minute stream interval without simulcasting:
 ```shell
-./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1440p" --data-publishers 2 --no-simulcast --video-publishers 1 --subscribers 2
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1440p" --data-publishers 2 --no-simulcast --start-publisher 1  --end-publisher 1 --subscribers 2
 
-Statistics for room load-test_0
+Statistics for room load-test_1
 
-Sub 0 in load-test_0 | Track            | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     |  PA_c7x4wmJALxWr | video | 46461 | 7.3mbps | 37.256332ms | 0 (0%)  | 7677      | 1.1mbps      | 31.789094ms
+Sub 0 in load-test_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+                     | PA_RZQnhwddGtp8   | data  | 7681  | 1.1mbps | 1.269959ms | 0 (0%)
+                     | TR_VCWjNe6EiscvXn | video | 46752 | 7.3mbps | 7.347317ms | 0 (0%)
 
-Sub 1 in load-test_0 | Track            | Kind  | Pkts  | Bitrate | Latency     | Dropped | Data Pkts | Data Bitrate | Latency
-                     |  PA_jmenhWMbuhXd | video | 46461 | 7.3mbps | 37.163675ms | 0 (0%)  | 7676      | 1.1mbps      | 31.704591ms
+Sub 1 in load-test_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+                     | TR_VCWjNe6EiscvXn | video | 46752 | 7.3mbps | 7.339957ms | 0 (0%)
+                     | PA_49NB4rjnoUtT   | data  | 7681  | 1.1mbps | 1.276926ms | 0 (0%)
 
-Summary for room load-test_0
+Summary for room load-test_1
 
-Summary | Tester               | Bitrate                 | Latency     | Total Dropped | Data Bitrate          | Latency     | Error
-        | Sub 0 in load-test_0 | 7.3mbps                 | 37.256332ms | 0 (0%)        | 1.1mbps               | 31.789094ms | -
-        | Sub 1 in load-test_0 | 7.3mbps                 | 37.163675ms | 0 (0%)        | 1.1mbps               | 31.704591ms | -
-        | Total                | 14.7mbps (14.7mbps avg) | 37.210004ms | 0 (0%)        | 2.1mbps (2.1mbps avg) | 31.746845ms | 0
+Summary | Tester               | Kind  | Tracks | Bitrate                | Latency    | Total Dropped | Error
+        | Sub 0 in load-test_1 | video | 1      | 7.3mbps                | 7.347317ms | 0 (0%)        | -
+        | Sub 0 in load-test_1 | data  | 1      | 1.1mbps                | 1.269959ms | 0 (0%)        | -
+        | Sub 1 in load-test_1 | video | 1      | 7.3mbps                | 7.339957ms | 0 (0%)        | -
+        | Sub 1 in load-test_1 | data  | 1      | 1.1mbps                | 1.276926ms | 0 (0%)        | -
+        | Total                | video | 2      | 14.7mbps (7.3mbps avg) | 7.343637ms | 0 (0%)        | 0
+        | Total                | data  | 2      | 2.1mbps (1.1mbps avg)  | 1.273443ms | 0 (0%)        | 0
 ```
 
 #### 5. Launching a remote connection with two publishers and two subscribers on different machines. In this case, a connection to one room will be made from one machine, and to the other from a different machine.
@@ -254,11 +260,11 @@ Summary | Tester               | Bitrate                 | Latency     | Total D
 ##### Machine 1: Running 2 publishers without subscribers
 
  ```shell
- ./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1  --end-publisher 2
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1  --end-publisher 2
 Using url, api-key, api-secret from environment
 Starting load test with 2 video publishers
-publishing video track - hhlhe_pubVM1_1_0
-publishing video track - hhlhe_pubVM1_2_1
+publishing video track - fylyz_pubVM1_1_0
+publishing video track - fylyz_pubVM1_2_1
 Finished connecting to room, waiting 1m0s
 No subscribers, skipping stats
  ```
@@ -266,51 +272,105 @@ No subscribers, skipping stats
 ##### Machine 2: Running 2 subscribers to connect to one room on Machine 1
 
  ```shell
- ./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --start-room-number 1  --end-room-number 1 --subscribers 2
-Using url, api-key, api-secret from environment
-Starting load test with 2 subscribers, 1 remote publishers
-subscribed to track aopvh_subVM1_1_1 TR_VCm4x7WvFmgMcT video
-subscribed to track aopvh_subVM1_1_0 TR_VCm4x7WvFmgMcT video
-Finished connecting to room, waiting 1m0s
-
+/livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --start-room-number 1  --end-room-number 1 --subscribers 2
 Statistics for room VM1_1
 
-Sub 1 in VM1_1 | Track              | Kind  | Pkts  | Bitrate | Latency   | Dropped | Data Pkts | Data Bitrate | Latency
-               |  TR_VCm4x7WvFmgMcT | video | 26663 | 4.1mbps | 8.01326ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 0 in VM1_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCRNowWqxAtsE3 | video | 26086 | 4.0mbps | 6.598817ms | 0 (0%)
 
-Sub 0 in VM1_1 | Track              | Kind  | Pkts  | Bitrate | Latency  | Dropped | Data Pkts | Data Bitrate | Latency
-               |  TR_VCm4x7WvFmgMcT | video | 26663 | 4.1mbps | 8.0058ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 1 in VM1_1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCRNowWqxAtsE3 | video | 26086 | 4.0mbps | 6.592381ms | 0 (0%)
 
 Summary for room VM1_1
 
-Summary | Tester         | Bitrate               | Latency   | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 1 in VM1_1 | 4.1mbps               | 8.01326ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 0 in VM1_1 | 4.1mbps               | 8.0058ms  | 0 (0%)        | 0bps            |  -      | -
-        | Total          | 8.2mbps (8.2mbps avg) | 8.00953ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Summary | Tester         | Kind  | Tracks | Bitrate               | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_1 | video | 1      | 4.0mbps               | 6.598817ms | 0 (0%)        | -
+        | Sub 1 in VM1_1 | video | 1      | 4.0mbps               | 6.592381ms | 0 (0%)        | -
+        | Total          | video | 2      | 8.1mbps (4.0mbps avg) | 6.595599ms | 0 (0%)        | 0
 ```
 
 ##### Machine 3: Running 2 subscribers to connect to another room on Machine 1
 
  ```shell
  ./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --start-room-number 2  --end-room-number 2 --subscribers 2
-Using url, api-key, api-secret from environment
-Starting load test with 2 subscribers, 1 remote publishers
-subscribed to track kkkba_subVM1_2_0 TR_VCFw3yocNkDPZL video
-subscribed to track kkkba_subVM1_2_1 TR_VCFw3yocNkDPZL video
-Finished connecting to room, waiting 1m0s
-
 Statistics for room VM1_2
 
-Sub 0 in VM1_2 | Track              | Kind  | Pkts  | Bitrate | Latency    | Dropped | Data Pkts | Data Bitrate | Latency
-               |  TR_VCFw3yocNkDPZL | video | 26064 | 4.0mbps | 7.843309ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 0 in VM1_2 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCfZxVXnPzTVDu | video | 25487 | 3.9mbps | 7.366207ms | 0 (0%)
 
-Sub 1 in VM1_2 | Track              | Kind  | Pkts  | Bitrate | Latency    | Dropped | Data Pkts | Data Bitrate | Latency
-               |  TR_VCFw3yocNkDPZL | video | 26064 | 4.0mbps | 7.850437ms | 0 (0%)  | 0         | 0bps         |  -
+Sub 1 in VM1_2 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+               | TR_VCfZxVXnPzTVDu | video | 25487 | 3.9mbps | 7.372518ms | 0 (0%)
 
 Summary for room VM1_2
 
-Summary | Tester         | Bitrate               | Latency    | Total Dropped | Data Bitrate    | Latency | Error
-        | Sub 1 in VM1_2 | 4.0mbps               | 7.850437ms | 0 (0%)        | 0bps            |  -      | -
-        | Sub 0 in VM1_2 | 4.0mbps               | 7.843309ms | 0 (0%)        | 0bps            |  -      | -
-        | Total          | 7.9mbps (7.9mbps avg) | 7.846873ms | 0 (0%)        | 0bps (0bps avg) |  -      | 0
+Summary | Tester         | Kind  | Tracks | Bitrate               | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_2 | video | 1      | 3.9mbps               | 7.366207ms | 0 (0%)        | -
+        | Sub 1 in VM1_2 | video | 1      | 3.9mbps               | 7.372518ms | 0 (0%)        | -
+        | Total          | video | 2      | 7.8mbps (3.9mbps avg) | 7.369363ms | 0 (0%)        | 0
+```
+
+#### 6. Launch with two publishers in 1080p resolution and two subscribers for each publisher with a 1-minute stream interval without simulcasting in the same room `VM1`.
+```shell
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --same-room  --end-publisher 2 --subscribers 2
+
+Statistics for room VM1
+
+Sub 0 in VM1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+             | TR_VCJTFJgfWPrLPM | video | 26663 | 4.1mbps | 7.741564ms | 0 (0%)
+             | TR_VC46w4STDFW92A | video | 26533 | 4.1mbps | 7.413243ms | 0 (0%)
+
+Sub 1 in VM1 | Track             | Kind  | Pkts  | Bitrate | Latency    | Dropped
+             | TR_VCJTFJgfWPrLPM | video | 26663 | 4.1mbps | 7.725936ms | 0 (0%)
+             | TR_VC46w4STDFW92A | video | 26533 | 4.1mbps | 7.407041ms | 0 (0%)
+
+Summary for room VM1
+
+Summary | Tester       | Kind  | Tracks | Bitrate                | Latency    | Total Dropped | Error
+        | Sub 0 in VM1 | video | 2      | 8.3mbps                | 7.577821ms | 0 (0%)        | -
+        | Sub 1 in VM1 | video | 2      | 8.3mbps                | 7.566893ms | 0 (0%)        | -
+        | Total        | video | 4      | 16.6mbps (4.1mbps avg) | 7.572357ms | 0 (0%)        | 0
+```
+
+#### 7. Launch with two publishers with audio in 1080p resolution and two subscribers for each publisher with a 1-minute stream interval.
+```shell
+./livekit-cli load-test --duration 1m --video-codec h264 --video-resolution "1080p" --no-simulcast --room-name VM1 --with-audio  --end-publisher 2 --subscribers 2
+Statistics for room VM1_1
+
+Sub 0 in VM1_1 | Track             | Kind  | Pkts  | Bitrate  | Latency    | Dropped
+               | TR_VCb3jqPexpMsb4 | video | 27132 | 4.1mbps  | 6.595114ms | 0 (0%)
+               | TR_AMUyfhHwtrUQMf | audio | 3081  | 23.3kbps | 6.72431ms  | 0 (0%)
+
+Sub 1 in VM1_1 | Track             | Kind  | Pkts  | Bitrate  | Latency    | Dropped
+               | TR_AMUyfhHwtrUQMf | audio | 3081  | 23.3kbps | 6.71336ms  | 0 (0%)
+               | TR_VCb3jqPexpMsb4 | video | 27132 | 4.1mbps  | 6.591647ms | 0 (0%)
+
+Statistics for room VM1_2
+
+Sub 0 in VM1_2 | Track             | Kind  | Pkts  | Bitrate  | Latency    | Dropped
+               | TR_VCiPTnBK3Sr52j | video | 27067 | 4.2mbps  | 7.498247ms | 0 (0%)
+               | TR_AMNj7cZdraQz6D | audio | 3071  | 23.3kbps | 6.792933ms | 0 (0%)
+
+Sub 1 in VM1_2 | Track             | Kind  | Pkts  | Bitrate  | Latency    | Dropped
+               | TR_AMNj7cZdraQz6D | audio | 3071  | 23.3kbps | 6.79852ms  | 0 (0%)
+               | TR_VCiPTnBK3Sr52j | video | 27067 | 4.2mbps  | 7.508409ms | 0 (0%)
+
+Summary for room VM1_1
+
+Summary | Tester         | Kind  | Tracks | Bitrate                 | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_1 | video | 1      | 4.1mbps                 | 6.595114ms | 0 (0%)        | -
+        | Sub 0 in VM1_1 | audio | 1      | 23.3kbps                | 6.72431ms  | 0 (0%)        | -
+        | Sub 1 in VM1_1 | video | 1      | 4.1mbps                 | 6.591647ms | 0 (0%)        | -
+        | Sub 1 in VM1_1 | audio | 1      | 23.3kbps                | 6.71336ms  | 0 (0%)        | -
+        | Total          | video | 2      | 8.3mbps (4.1mbps avg)   | 6.59338ms  | 0 (0%)        | 0
+        | Total          | audio | 2      | 46.6kbps (23.3kbps avg) | 6.718835ms | 0 (0%)        | 0
+
+Summary for room VM1_2
+
+Summary | Tester         | Kind  | Tracks | Bitrate                 | Latency    | Total Dropped | Error
+        | Sub 0 in VM1_2 | video | 1      | 4.2mbps                 | 7.498247ms | 0 (0%)        | -
+        | Sub 0 in VM1_2 | audio | 1      | 23.3kbps                | 6.792933ms | 0 (0%)        | -
+        | Sub 1 in VM1_2 | video | 1      | 4.2mbps                 | 7.508409ms | 0 (0%)        | -
+        | Sub 1 in VM1_2 | audio | 1      | 23.3kbps                | 6.79852ms  | 0 (0%)        | -
+        | Total          | video | 2      | 8.3mbps (4.2mbps avg)   | 7.503328ms | 0 (0%)        | 0
+        | Total          | audio | 2      | 46.6kbps (23.3kbps avg) | 6.795727ms | 0 (0%)        | 0
 ```
