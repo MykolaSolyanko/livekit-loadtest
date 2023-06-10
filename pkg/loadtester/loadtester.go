@@ -317,7 +317,7 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 
 	defer func() {
 		if e := recover(); e != nil {
-			fmt.Println("caught panic in consumeTrack", e)
+			go t.consumeTrack(track, pub, rp)
 		}
 	}()
 
@@ -345,7 +345,11 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTr
 		}
 	}))
 
-	stats.startedAt.Store(time.Now())
+	tm := stats.startedAt.Load()
+	if tm.IsZero() {
+		stats.startedAt.Store(time.Now())
+	}
+
 	for {
 		pkt, _, err := track.ReadRTP()
 		if err != nil {

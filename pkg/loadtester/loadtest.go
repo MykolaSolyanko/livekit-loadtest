@@ -293,7 +293,27 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 			publishers = append(publishers, testerVideo)
 
 			group.Go(func() error {
-				err := startPublishing(params, testerVideo, resolution)
+				if err := testerVideo.Start(); err != nil {
+					return err
+				}
+
+				var err error
+				if params.Simulcast {
+					_, err = testerVideo.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
+				} else {
+					_, err = testerVideo.PublishVideoTrack("video", resolution, params.VideoCodec)
+				}
+				if err != nil {
+					return err
+				}
+
+				if params.WithAudio {
+					_, err = testerVideo.PublishAudioTrack("audio")
+					if err != nil {
+						return err
+					}
+				}
+
 				if err != nil {
 					fmt.Println(errors.Wrapf(err, "could not publish %s", testerPubParams.name))
 					errs.Store(testerPubParams.name, err)
@@ -429,31 +449,6 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 	}
 
 	return stats, nil
-}
-
-func startPublishing(params Params, tester *LoadTester, resolution string) error {
-	if err := tester.Start(); err != nil {
-		return err
-	}
-
-	var err error
-	if params.Simulcast {
-		_, err = tester.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
-	} else {
-		_, err = tester.PublishVideoTrack("video", resolution, params.VideoCodec)
-	}
-	if err != nil {
-		return err
-	}
-
-	if params.WithAudio {
-		_, err = tester.PublishAudioTrack("audio")
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func startAudioPublishing(params Params, tester *LoadTester) error {
