@@ -178,7 +178,8 @@ func (t *LoadTester) PublishData(packetSizeInByte, bitrate int, kind livekit.Dat
 
 	data := prepareData(packetSizeInByte)
 
-	fmt.Println("publishing data track -", t.room.LocalParticipant.Identity())
+	fmt.Printf("\rpublishing data track - %s                   \n", t.room.LocalParticipant.Identity())
+
 	if err := t.room.LocalParticipant.PublishData([]byte("ensure connect"), kind, []string{"unexist"}); err != nil {
 		return err
 	}
@@ -290,7 +291,7 @@ func (t *LoadTester) onTrackSubscribed(track *webrtc.TrackRemote, pub *lksdk.Rem
 
 	t.stats.Store(track.ID(), s)
 
-	fmt.Println("subscribed to track", t.room.LocalParticipant.Identity(), pub.SID(), pub.Kind())
+	fmt.Printf("\rsubscribed to track %s %s %s                   \n", t.room.LocalParticipant.Identity(), pub.SID(), pub.Kind())
 
 	go t.consumeTrack(track, pub, rp)
 

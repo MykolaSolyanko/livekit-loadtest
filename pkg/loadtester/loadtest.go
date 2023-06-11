@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -45,6 +46,12 @@ type Params struct {
 	DataBitrate        int
 
 	TesterParams
+}
+
+type trackParams struct {
+	roomName   string
+	resolution string
+	err        error
 }
 
 func NewLoadTest(params Params) *LoadTest {
@@ -113,20 +120,37 @@ func (t *LoadTest) Run(ctx context.Context) error {
 	}
 
 	summaries := make(map[string]map[string][]*summary)
-	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
-	for room, roomStats := range stats {
-		fmt.Fprintf(w, "\nStatistics for room %s\n", room)
+	statsKeys := make([]string, 0, len(stats))
+	for k := range stats {
+		statsKeys = append(statsKeys, k)
+	}
 
-		summaries[room] = make(map[string][]*summary)
-		for subName, testerStats := range roomStats {
-			if len(testerStats.stats) == 0 {
+	sort.Strings(statsKeys)
+
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+	for _, roomStats := range statsKeys {
+		fmt.Fprintf(w, "\nStatistics for room %s\n", roomStats)
+
+		summaries[roomStats] = make(map[string][]*summary)
+
+		subRoomStatsKeys := make([]string, 0, len(stats[roomStats]))
+		for k := range stats[roomStats] {
+			subRoomStatsKeys = append(subRoomStatsKeys, k)
+		}
+
+		sort.Strings(subRoomStatsKeys)
+
+		subRoomStats := stats[roomStats]
+
+		for _, subName := range subRoomStatsKeys {
+			if len(subRoomStats[subName].stats) == 0 {
 				continue
 			}
 
-			summaries[room][subName] = getTesterSummary(testerStats, t.Params.DataPublishers > 0, t.Params.WithAudio)
+			summaries[roomStats][subName] = getTesterSummary(subRoomStats[subName], t.Params.DataPublishers > 0, t.Params.WithAudio)
 
 			_, _ = fmt.Fprintf(w, "\n%s\t| Track\t| Kind\t| Pkts\t| Bitrate\t| Latency\t| Dropped\n", subName)
-			for _, stat := range testerStats.stats {
+			for _, stat := range subRoomStats[subName].stats {
 
 				latency, dropped := formatStrings(
 					stat.packets.Load(), stat.latency.Load(),
@@ -145,14 +169,30 @@ func (t *LoadTest) Run(ctx context.Context) error {
 		return nil
 	}
 
+	sumKeys := make([]string, 0, len(summaries))
+	for k := range summaries {
+		sumKeys = append(sumKeys, k)
+	}
+
+	sort.Strings(sumKeys)
+
 	// summary
-	for name, subSummary := range summaries {
+	for _, name := range sumKeys {
 		w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 		fmt.Fprintf(w, "\nSummary for room %s\n", name)
 		_, _ = fmt.Fprint(w, "\nSummary\t| Tester\t| Kind\t| Tracks\t| Bitrate\t| Latency\t| Total Dropped\t| Error\n")
 
-		for subName, summary := range subSummary {
-			for _, s := range summary {
+		subSummariesKeys := make([]string, 0, len(summaries[name]))
+		for k := range summaries[name] {
+			subSummariesKeys = append(subSummariesKeys, k)
+		}
+
+		sort.Strings(subSummariesKeys)
+
+		subSummaries := summaries[name]
+
+		for _, subName := range subSummariesKeys {
+			for _, s := range subSummaries[subName] {
 				if s == nil {
 					continue
 				}
@@ -167,7 +207,7 @@ func (t *LoadTest) Run(ctx context.Context) error {
 			}
 		}
 
-		s := getTestSummary(subSummary, t.Params.DataPublishers > 0, t.Params.WithAudio)
+		s := getTestSummary(summaries[name], t.Params.DataPublishers > 0, t.Params.WithAudio)
 		for _, stat := range s {
 			sLatency, sDropped := formatStrings(
 				stat.packets, stat.latency, stat.latencyCount, stat.dropped)
@@ -267,16 +307,16 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		&params.HighQualityViewer, &params.MediumQualityView, &params.LowQualityViewer,
 		params.Subscribers, params.Simulcast)
 
-	ready := make(chan struct{})
-
 	roomID := params.StartPublisher
 	if isRemote {
 		roomID = params.StartRemoteRoomNumber
 	}
 
-	var room string
+	subParams := []*trackParams{}
 
 	for i := 0; i < maxPublishers; i++ {
+		var room string
+
 		if params.SameRoom {
 			room = params.Room
 		} else {
@@ -286,49 +326,70 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		roomID++
 		resolution := resolutions[i]
 
+		var trackParam *trackParams
+
+		if params.SameRoom && len(subParams) == 0 {
+			trackParam = &trackParams{
+				roomName:   room,
+				resolution: resolution,
+			}
+
+			subParams = append(subParams, trackParam)
+		} else if !params.SameRoom {
+			trackParam = &trackParams{
+				roomName:   room,
+				resolution: resolution,
+			}
+
+			subParams = append(subParams, trackParam)
+		}
+
 		if !isRemote {
 			testerPubParams := prepareTesterPubParams(params, i, room, roomID)
 			testerVideo := NewLoadTester(testerPubParams, livekit.VideoQuality_HIGH)
 
 			publishers = append(publishers, testerVideo)
 
-			group.Go(func() error {
-				if err := testerVideo.Start(); err != nil {
-					return err
+			if err := testerVideo.Start(); err != nil {
+				fmt.Println(errors.Wrapf(err, "could not connect %s", testerPubParams.name))
+				if trackParam != nil {
+					trackParam.err = err
 				}
 
-				var err error
-				if params.Simulcast {
-					_, err = testerVideo.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
-				} else {
-					_, err = testerVideo.PublishVideoTrack("video", resolution, params.VideoCodec)
-				}
-				if err != nil {
-					return err
+				continue
+			}
+
+			var err error
+			if params.Simulcast {
+				_, err = testerVideo.PublishSimulcastTrack("video-simulcast", resolution, params.VideoCodec)
+			} else {
+				_, err = testerVideo.PublishVideoTrack("video", resolution, params.VideoCodec)
+			}
+			if err != nil {
+				if trackParam != nil {
+					trackParam.err = err
 				}
 
-				if params.WithAudio {
-					_, err = testerVideo.PublishAudioTrack("audio")
-					if err != nil {
-						return err
+				continue
+			}
+
+			if params.WithAudio {
+				if _, err = testerVideo.PublishAudioTrack("audio"); err != nil {
+					if trackParam != nil {
+						trackParam.err = err
 					}
-				}
 
-				if err != nil {
-					fmt.Println(errors.Wrapf(err, "could not publish %s", testerPubParams.name))
-					errs.Store(testerPubParams.name, err)
-
-					return nil
+					continue
 				}
-				return nil
-			})
+			}
+
 			numStarted++
 		}
+	}
 
-		if params.SameRoom && len(testers) > 0 {
-			continue
-		}
+	ready := make(chan struct{})
 
+	for _, subParam := range subParams {
 		high := params.HighQualityViewer
 		medium := params.MediumQualityView
 		low := params.LowQualityViewer
@@ -338,13 +399,18 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		for j := 0; j < params.Subscribers; j++ {
 			testerSubParams := params.TesterParams
 			testerSubParams.Sequence = j
-			testerSubParams.expectedTracks = expectedTracks
 			testerSubParams.Subscribe = true
-			testerSubParams.Resolution = resolution
+			testerSubParams.Resolution = subParam.resolution
 			testerSubParams.SameRoom = params.SameRoom
-			testerSubParams.IdentityPrefix += fmt.Sprintf("_sub%s", room)
-			testerSubParams.Room = room
-			testerSubParams.name = fmt.Sprintf("Sub %d in %s", j, room)
+			testerSubParams.IdentityPrefix += fmt.Sprintf("_sub%s", subParam.roomName)
+			testerSubParams.Room = subParam.roomName
+			testerSubParams.name = fmt.Sprintf("Sub %d in %s", j, subParam.roomName)
+			if subParam.err != nil {
+				errs.Store(testerSubParams.name, subParam.err)
+				if !params.SameRoom {
+					continue
+				}
+			}
 
 			quality := livekit.VideoQuality_HIGH
 
@@ -387,6 +453,10 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 		}
 	}
 
+	done := make(chan struct{})
+
+	runWaiting(done, "Waiting all subscribers will be connect")
+
 	// throttle pace of join events
 	for {
 		secondsElapsed := float64(time.Since(startedAt)) / float64(time.Second)
@@ -413,17 +483,24 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 
 	if err := group.Wait(); err != nil {
 		close(ready)
+		done <- struct{}{}
+
+		fmt.Printf("\rWaiting all subscribers exit with error: %s\n", err.Error())
 
 		return nil, err
 	}
+
+	done <- struct{}{}
 
 	duration := params.Duration
 	if duration == 0 {
 		// a really long time
 		duration = 1000 * time.Hour
 	}
-	fmt.Printf("Finished connecting to room, waiting %s\n", duration.String())
+	fmt.Printf("\rFinished connecting to room, waiting %s                   \n", duration.String())
 	close(ready)
+
+	runWaiting(done, "Waiting when test will be finished")
 
 	select {
 	case <-ctx.Done():
@@ -431,6 +508,8 @@ func (t *LoadTest) run(ctx context.Context, params Params) (map[string]map[strin
 	case <-time.After(duration):
 		// finished
 	}
+
+	close(done)
 
 	if speakerSim != nil {
 		speakerSim.Stop()
@@ -473,6 +552,22 @@ func prepareTesterPubParams(params Params, seqNumber int, room string, roomID in
 	testerPubParams.SameRoom = params.SameRoom
 
 	return testerPubParams
+}
+
+func runWaiting(done chan struct{}, msg string) {
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				for _, r := range `-\|/` {
+					fmt.Printf("\r%s %c", msg, r)
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+		}
+	}()
 }
 
 func splitVideoQualityViewers(high, medium, low *int, subscribers int, simulcasting bool) {
